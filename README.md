@@ -73,10 +73,11 @@ pls check paper author's [repo](https://github.com/kang205/SASRec) for detailed 
 
 I see a dozen of citations of the repo🫰, pls use the bib as below if needed.
 ```
-@software{Huang_SASRec_pytorch,
+@misc{Huang_SASRec_pytorch,
 author = {Huang, Zan},
 title = {{SASRec.pytorch}},
 url = {https://github.com/pmixer/SASRec.pytorch},
+howpublished = {\url{https://github.com/pmixer/SASRec.pytorch}},
 year={2020}
 }
 ```
