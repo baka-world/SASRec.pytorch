@@ -127,7 +127,7 @@ def sample_function(
             one_batch.append(sample(uids[counter % usernum]))
             counter += 1
         # 将批次数据放入队列
-        result_queue.put(zip(*one_batch))
+        result_queue.put(tuple(zip(*one_batch)))
 
 
 class WarpSampler(object):
@@ -182,6 +182,10 @@ def data_partition(fname):
 
     将原始交互数据划分为训练集、验证集和测试集。
 
+    支持两种格式：
+    1. UserID MovieID (无时间戳)
+    2. UserID MovieID Timestamp (带时间戳，会按时间排序)
+
     划分策略：
     - 对于每个用户，将其交互序列按时间顺序排列
     - 前 N-2 个交互作为训练数据
@@ -197,20 +201,44 @@ def data_partition(fname):
     """
     usernum = 0
     itemnum = 0
-    User = defaultdict(list)  # {用户ID: [物品序列]}
+    User = defaultdict(list)  # {用户ID: [(timestamp, item_id)] 或 [item_id]}
     user_train = {}
     user_valid = {}
     user_test = {}
+    has_timestamp = False
 
     # 加载数据
     f = open("data/%s.txt" % fname, "r")
+    first_line = f.readline()
+    f.close()
+
+    parts = first_line.rstrip().split(" ")
+    if len(parts) >= 3:
+        has_timestamp = True
+        print("Detected timestamp format: UserID MovieID Timestamp")
+
+    f = open("data/%s.txt" % fname, "r")
     for line in f:
-        u, i = line.rstrip().split(" ")
-        u = int(u)
-        i = int(i)
+        parts = line.rstrip().split(" ")
+        u = int(parts[0])
+        i = int(parts[1])
+
+        if has_timestamp and len(parts) >= 3:
+            ts = int(parts[2])
+            User[u].append((ts, i))
+        else:
+            User[u].append(i)
+
         usernum = max(u, usernum)
         itemnum = max(i, itemnum)
-        User[u].append(i)
+    f.close()
+
+    # 按时间戳排序（如果有的话）
+    if has_timestamp:
+        for u in User:
+            User[u].sort(key=lambda x: x[0])
+            # 提取排序后的物品ID
+            User[u] = [item for _, item in User[u]]
 
     # 划分数据
     for user in User:
@@ -229,6 +257,39 @@ def data_partition(fname):
             user_test[user].append(User[user][-1])
 
     return [user_train, user_valid, user_test, usernum, itemnum]
+
+
+def load_timestamps(fname):
+    """
+    加载时间戳数据
+
+    返回:
+        user_timestamps: {用户ID: [时间戳列表]}
+    """
+    user_timestamps = defaultdict(list)
+
+    f = open("data/%s.txt" % fname, "r")
+    first_line = f.readline()
+    f.close()
+
+    parts = first_line.rstrip().split(" ")
+    if len(parts) < 3:
+        return None
+
+    f = open("data/%s.txt" % fname, "r")
+    for line in f:
+        parts = line.rstrip().split(" ")
+        if len(parts) >= 3:
+            u = int(parts[0])
+            ts = int(parts[2])
+            user_timestamps[u].append(ts)
+    f.close()
+
+    # 按时间戳排序
+    for u in user_timestamps:
+        user_timestamps[u].sort()
+
+    return user_timestamps
 
 
 def evaluate(model, dataset, args):
@@ -260,30 +321,54 @@ def evaluate(model, dataset, args):
 
     # 为了加速，如果用户数超过10000，随机采样10000个用户评估
     if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
+        users = random.sample(list(train.keys()), min(10000, len(train)))
     else:
-        users = range(1, usernum + 1)
+        users = list(train.keys())
 
     for u in users:
         # 跳过没有训练数据或测试数据的用户
-        if len(train[u]) < 1 or len(test[u]) < 1:
+        if u not in train or len(train[u]) < 1 or u not in test or len(test[u]) < 1:
             continue
 
         # 构建用户历史序列
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        seq[idx] = valid[u][0]  # 验证集的最后一个作为起点
-        idx -= 1
-        for i in reversed(train[u]):
-            seq[idx] = i
+        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+        train_items = train[u]
+        if train_items and isinstance(train_items[0], dict):
+            # 验证集物品
+            if valid[u] and isinstance(valid[u][0], dict):
+                seq[idx] = valid[u][0]["iid"]
+            elif valid[u]:
+                seq[idx] = valid[u][0]
             idx -= 1
-            if idx == -1:
-                break
+            for i in range(len(train_items) - 1, -1, -1):
+                seq[idx] = train_items[i]["iid"]
+                idx -= 1
+                if idx == -1:
+                    break
+        else:
+            if valid[u]:
+                seq[idx] = valid[u][0]
+            idx -= 1
+            for i in reversed(train_items):
+                seq[idx] = i
+                idx -= 1
+                if idx == -1:
+                    break
 
         # 构建候选物品列表：1个真实物品 + 99个负样本
-        rated = set(train[u])
+        if train_items and isinstance(train_items[0], dict):
+            rated = {item["iid"] for item in train_items}
+        else:
+            rated = set(train_items)
         rated.add(0)  # 排除padding
-        item_idx = [test[u][0]]  # 真实物品
+        # 提取测试集物品ID
+        if test[u] and isinstance(test[u][0], dict):
+            test_item = test[u][0]["iid"]
+        else:
+            test_item = test[u][0]
+        item_idx = [test_item]  # 真实物品
         for _ in range(100):
             t = np.random.randint(1, itemnum + 1)
             while t in rated:
@@ -323,24 +408,41 @@ def evaluate_valid(model, dataset, args):
     valid_user = 0.0
     HT = 0.0
     if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
+        users = random.sample(list(train.keys()), min(10000, len(train)))
     else:
-        users = range(1, usernum + 1)
+        users = list(train.keys())
     for u in users:
-        if len(train[u]) < 1 or len(valid[u]) < 1:
+        if u not in train or len(train[u]) < 1 or u not in valid or len(valid[u]) < 1:
             continue
 
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        for i in reversed(train[u]):
-            seq[idx] = i
-            idx -= 1
-            if idx == -1:
-                break
+        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+        train_items = train[u]
+        if train_items and isinstance(train_items[0], dict):
+            for i in range(len(train_items) - 1, -1, -1):
+                seq[idx] = train_items[i]["iid"]
+                idx -= 1
+                if idx == -1:
+                    break
+        else:
+            for i in reversed(train_items):
+                seq[idx] = i
+                idx -= 1
+                if idx == -1:
+                    break
 
-        rated = set(train[u])
+        if train_items and isinstance(train_items[0], dict):
+            rated = {item["iid"] for item in train_items}
+        else:
+            rated = set(train_items)
         rated.add(0)
-        item_idx = [valid[u][0]]
+        # 提取验证集物品ID
+        if valid[u] and isinstance(valid[u][0], dict):
+            valid_item = valid[u][0]["iid"]
+        else:
+            valid_item = valid[u][0]
+        item_idx = [valid_item]
         for _ in range(100):
             t = np.random.randint(1, itemnum + 1)
             while t in rated:
@@ -364,8 +466,10 @@ def evaluate_valid(model, dataset, args):
     return NDCG / valid_user, HT / valid_user
 
 
-
+def discretize_time_interval(time_diff, time_span, unit="hour"):
     """
+    将时间间隔离散化到指定范围
+
     参数:
         time_diff: 时间间隔（秒）
         time_span: 最大离散化值
@@ -453,9 +557,11 @@ def sample_function_with_time(
     """
 
     def sample(uid):
-        # 确保用户有足够的历史记录（至少2个）
-        while len(user_train[uid]) <= 1:
+        uid = int(uid)
+        # 确保用户有足够的历史记录（至少2个）且用户ID存在于训练数据中
+        while uid not in user_train or len(user_train[uid]) <= 1:
             uid = np.random.randint(1, usernum + 1)
+            uid = int(uid)
 
         # 初始化序列
         seq = np.zeros([maxlen], dtype=np.int32)
@@ -464,16 +570,23 @@ def sample_function_with_time(
         time_mat = np.zeros([maxlen, maxlen], dtype=np.int32)
 
         # 构建完整的历史记录（包含时间戳）
-        history = []
-        for i, item_id in enumerate(user_train[uid]):
-            history.append(
-                {
-                    "iid": item_id,
-                    "timestamp": user_timestamps[uid][i]
-                    if uid in user_timestamps
-                    else 0,
-                }
-            )
+        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, 'timestamp': ...}, ...]
+        user_items = user_train[uid]
+        if user_items and isinstance(user_items[0], dict):
+            # 已经是dict格式，直接使用
+            history = [item.copy() for item in user_items]
+        else:
+            # 转换为dict格式
+            history = []
+            for i, item_id in enumerate(user_items):
+                history.append(
+                    {
+                        "iid": item_id,
+                        "timestamp": user_timestamps[uid][i]
+                        if uid in user_timestamps
+                        else 0,
+                    }
+                )
 
         # 计算时间间隔矩阵
         time_mat = compute_time_matrix_for_user(history, maxlen, time_span, unit)
@@ -483,7 +596,12 @@ def sample_function_with_time(
         idx = maxlen - 1
 
         # 已交互物品集合，用于负采样时排除
-        ts = set(user_train[uid])
+        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+        user_items = user_train[uid]
+        if user_items and isinstance(user_items[0], dict):
+            ts = {item["iid"] for item in user_items}
+        else:
+            ts = set(user_items)
 
         # 逆序遍历用户历史（从最近到最远）
         for i in range(len(history) - 2, -1, -1):
@@ -509,7 +627,7 @@ def sample_function_with_time(
             one_batch.append(sample(uids[counter % usernum]))
             counter += 1
         # 将批次数据放入队列
-        result_queue.put(zip(*one_batch))
+        result_queue.put(tuple(zip(*one_batch)))
 
 
 class WarpSamplerWithTime(object):
@@ -602,32 +720,53 @@ def evaluate_tisasrec(model, dataset, args):
 
     # 为每个用户预计算时间间隔矩阵
     time_matrix_dict = {}
-    for u in range(1, usernum + 1):
+    for u in train.keys():
         if len(train[u]) >= 1:
-            history = [{"iid": item, "timestamp": 0} for item in train[u]]
+            # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+            if train[u] and isinstance(train[u][0], dict):
+                history = [item.copy() for item in train[u]]
+            else:
+                history = [{"iid": item, "timestamp": 0} for item in train[u]]
             time_matrix_dict[u] = compute_time_matrix_for_user(
                 history, args.maxlen, args.time_span
             )
 
     if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
+        users = random.sample(list(train.keys()), min(10000, len(train)))
     else:
-        users = range(1, usernum + 1)
+        users = list(train.keys())
 
     for u in users:
-        if len(train[u]) < 1 or len(test[u]) < 1:
+        if u not in train or len(train[u]) < 1 or u not in test or len(test[u]) < 1:
             continue
 
         # 构建用户历史序列
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        seq[idx] = valid[u][0] if len(valid[u]) > 0 else train[u][-1]
-        idx -= 1
-        for i in reversed(train[u]):
-            seq[idx] = i
+        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+        train_items = train[u]
+        if train_items and isinstance(train_items[0], dict):
+            # 先加入验证集物品，再加入训练集历史
+            if valid[u] and isinstance(valid[u][0], dict):
+                seq[idx] = valid[u][0]["iid"]
+            elif valid[u]:
+                seq[idx] = valid[u][0]
             idx -= 1
-            if idx == -1:
-                break
+            for i in range(len(train_items) - 1, -1, -1):
+                seq[idx] = train_items[i]["iid"]
+                idx -= 1
+                if idx == -1:
+                    break
+        else:
+            # 先加入验证集物品，再加入训练集历史
+            if valid[u]:
+                seq[idx] = valid[u][0]
+            idx -= 1
+            for i in reversed(train_items):
+                seq[idx] = i
+                idx -= 1
+                if idx == -1:
+                    break
 
         # 获取时间间隔矩阵
         time_mat = time_matrix_dict.get(
@@ -635,9 +774,17 @@ def evaluate_tisasrec(model, dataset, args):
         )
 
         # 构建候选物品列表
-        rated = set(train[u])
+        if train_items and isinstance(train_items[0], dict):
+            rated = {item["iid"] for item in train_items}
+        else:
+            rated = set(train_items)
         rated.add(0)
-        item_idx = [test[u][0]]
+        # 提取测试集物品ID
+        if test[u] and isinstance(test[u][0], dict):
+            test_item = test[u][0]["iid"]
+        else:
+            test_item = test[u][0]
+        item_idx = [test_item]
         for _ in range(100):
             t = np.random.randint(1, itemnum + 1)
             while t in rated:
@@ -681,38 +828,61 @@ def evaluate_valid_tisasrec(model, dataset, args):
 
     # 为每个用户预计算时间间隔矩阵
     time_matrix_dict = {}
-    for u in range(1, usernum + 1):
+    for u in train.keys():
         if len(train[u]) >= 1:
-            history = [{"iid": item, "timestamp": 0} for item in train[u]]
+            # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+            if train[u] and isinstance(train[u][0], dict):
+                history = [item.copy() for item in train[u]]
+            else:
+                history = [{"iid": item, "timestamp": 0} for item in train[u]]
             time_matrix_dict[u] = compute_time_matrix_for_user(
                 history, args.maxlen, args.time_span
             )
 
     if usernum > 10000:
-        users = random.sample(range(1, usernum + 1), 10000)
+        users = random.sample(list(train.keys()), min(10000, len(train)))
     else:
-        users = range(1, usernum + 1)
+        users = list(train.keys())
 
     for u in users:
-        if len(train[u]) < 1 or len(valid[u]) < 1:
+        if u not in train or len(train[u]) < 1 or u not in valid or len(valid[u]) < 1:
             continue
 
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        for i in reversed(train[u]):
-            seq[idx] = i
-            idx -= 1
-            if idx == -1:
-                break
+        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+        train_items = train[u]
+        if train_items and isinstance(train_items[0], dict):
+            for i in range(len(train_items) - 1, -1, -1):
+                seq[idx] = train_items[i]["iid"]
+                idx -= 1
+                if idx == -1:
+                    break
+        else:
+            for i in reversed(train_items):
+                seq[idx] = i
+                idx -= 1
+                if idx == -1:
+                    break
 
         # 获取时间间隔矩阵
         time_mat = time_matrix_dict.get(
             u, np.zeros((args.maxlen, args.maxlen), dtype=np.int32)
         )
 
-        rated = set(train[u])
+        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
+        train_items = train[u]
+        if train_items and isinstance(train_items[0], dict):
+            rated = {item["iid"] for item in train_items}
+        else:
+            rated = set(train_items)
         rated.add(0)
-        item_idx = [valid[u][0]]
+        # 提取验证集物品ID
+        if valid[u] and isinstance(valid[u][0], dict):
+            valid_item = valid[u][0]["iid"]
+        else:
+            valid_item = valid[u][0]
+        item_idx = [valid_item]
         for _ in range(100):
             t = np.random.randint(1, itemnum + 1)
             while t in rated:

@@ -40,13 +40,44 @@ A_ij = softmax(Q_i * K_j^T + Q_i * abs_pos_K_i^T + time_matrix_K_j * Q_i)
 
 ---
 
+## 数据准备
+
+### 下载MovieLens 1M数据集
+
+```bash
+cd data
+wget http://files.grouplens.org/datasets/movielens/ml-1m.zip
+unzip ml-1m.zip
+```
+
+### 转换数据格式
+
+运行转换脚本生成带时间戳的数据集：
+
+```bash
+cd ..
+python convert_ml1m.py
+```
+
+转换后的数据格式（`data/ml-1m.txt`）：
+```
+UserID MovieID Timestamp
+1 3186 978300019
+1 1270 978300055
+...
+```
+
+**注意**：如果使用不带时间戳的旧版数据（仅 `UserID MovieID`），模型将退化为标准SASRec。
+
+---
+
 ## 使用方法
 
 ### 环境准备
 
 ```bash
 # 安装依赖
-pip install torch numpy datasets
+pip install torch numpy
 ```
 
 ### 训练SASRec（标准版本）
@@ -57,15 +88,13 @@ python main.py --dataset=ml-1m --train_dir=default --maxlen=200 --dropout_rate=0
 
 ### 训练TiSASRec（时序感知版本）
 
-使用HuggingFace数据集（推荐，包含时间戳信息）：
-
 ```bash
 python main_tisasrec.py \
     --dataset=ml-1m \
     --train_dir=tisasrec_default \
     --use_time \
     --time_span=100 \
-    --use_hf \
+    --time_unit=hour \
     --device=cuda
 ```
 
@@ -100,6 +129,7 @@ python main_tisasrec.py \
 | `--dropout_rate` | 0.2 | Dropout比率 |
 | `--device` | cuda | 训练设备 |
 | `--num_epochs` | 1000 | 训练轮数 |
+| `--num_workers` | 3 | 数据加载线程数 |
 
 ### TiSASRec特有参数
 
@@ -108,7 +138,8 @@ python main_tisasrec.py \
 | `--use_time` | False | 是否启用时序感知机制 |
 | `--time_span` | 100 | 时间间分离散化范围（将连续时间间隔映射到[1, time_span]） |
 | `--time_unit` | hour | 时间单位（second/minute/hour/day） |
-| `--use_hf` | False | 是否使用HuggingFace数据集 |
+| `--patience` | 50 | 早停耐心值 |
+| `--min_delta` | 0.001 | 验证指标提升最小阈值 |
 
 ### 参数调优建议
 
@@ -121,29 +152,9 @@ python main_tisasrec.py \
    - 交互一般（小时级）：使用`hour`（推荐）
    - 交互稀疏（天级）：使用`day`
 
----
-
-## HuggingFace数据集支持
-
-本仓库支持从HuggingFace加载包含时间信息的ml-1m数据集（cep-ter/ML-1M）。
-
-### 数据集字段
-
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| `uid` | int64 | 用户ID |
-| `iid` | int64 | 物品ID |
-| `timestamp` | int64 | Unix时间戳（秒） |
-| `time` | int64 | 一天中的小时（0-23） |
-| `rating` | int64 | 评分（1-5） |
-| `genres` | string | 电影类型 |
-| `label` | int64 | 二元标签 |
-
-### 数据处理流程
-
-```
-原始时间戳 → 计算时间间隔 → 离散化到[1, time_span] → 嵌入为向量 → 融入注意力计算
-```
+3. **`batch_size`**：根据显存调整
+   - 8GB显存：建议64
+   - 16GB+显存：建议128
 
 ---
 
@@ -155,10 +166,8 @@ Training TiSASRec on dataset: ml-1m
 Use Time Information: True
 Time Span: 100, Time Unit: hour
 ============================================================================================
-Loading dataset from HuggingFace...
-Dataset loaded in 2.34s
 average sequence length: 165.32
-Evaluating epoch:20, time: 125.6(s), valid (NDCG@10: 0.6012, HR@10: 0.8356), test (NDCG@10: 0.5956, HR@10: 0.8312)
+Evaluating epoch:20, time: 125.6(s), valid (NDCG@10: 0.2654, HR@10: 0.4821), test (NDCG@10: 0.2587, HR@10: 0.4712)
 ```
 
 ---
@@ -210,8 +219,10 @@ SASRec.pytorch/
 │   ├── main_tisasrec.py     # TiSASRec训练脚本（新增）
 │   ├── model.py             # 模型定义（含TiSASRec，新增）
 │   ├── utils.py             # 工具函数（含时序采样，新增）
-│   └── dataset_hf.py        # HuggingFace数据集加载（新增）
+│   └── convert_ml1m.py      # ML-1M数据转换脚本（新增）
 ├── data/                    # 数据目录
+│   ├── ml-1m/               # MovieLens 1M原始数据
+│   └── ml-1m.txt            # 转换后的数据（含时间戳）
 ├── latex/                   # 论文源码
 └── README.md                # 本文档
 ```

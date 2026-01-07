@@ -24,11 +24,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from model import SASRec, TiSASRec
 from utils import *
-from dataset_hf import (
-    load_hf_ml1m_dataset,
-    process_dataset_for_sequential,
-    compute_time_matrix,
-)
 
 
 def str2bool(s):
@@ -94,10 +89,22 @@ parser.add_argument(
     help="时间单位，用于计算时间间隔",
 )
 parser.add_argument(
-    "--use_hf",
-    action="store_true",
-    default=False,
-    help="是否使用HuggingFace数据集（包含时间信息）",
+    "--patience",
+    default=50,
+    type=int,
+    help="早停耐心值，连续多少个epoch验证指标没有提升则停止训练",
+)
+parser.add_argument(
+    "--min_delta",
+    default=0.001,
+    type=float,
+    help="验证指标提升的最小阈值",
+)
+parser.add_argument(
+    "--num_workers",
+    default=3,
+    type=int,
+    help="数据加载的并行线程数",
 )
 
 args = parser.parse_args()
@@ -119,23 +126,6 @@ with open(os.path.join(args.dataset + "_" + args.train_dir, "args.txt"), "w") as
 f.close()
 
 
-def prepare_timestamp_dict(user_history):
-    """
-    从用户历史中提取时间戳字典
-
-    参数:
-        user_history: {用户ID: [{'iid': 物品ID, 'timestamp': 时间戳, ...}, ...]}
-
-    返回:
-        timestamp_dict: {用户ID: [时间戳列表]}
-    """
-    timestamp_dict = {}
-    for uid, history in user_history.items():
-        timestamps = [item.get("timestamp", 0) for item in history]
-        timestamp_dict[uid] = timestamps
-    return timestamp_dict
-
-
 if __name__ == "__main__":
     print("=" * 60)
     print(
@@ -145,33 +135,33 @@ if __name__ == "__main__":
     print(f"Time Span: {args.time_span}, Time Unit: {args.time_unit}")
     print("=" * 60)
 
-    if args.use_hf:
-        print("Loading dataset from HuggingFace...")
-        hf_dataset = load_hf_ml1m_dataset()
-        user_history, itemnum, usernum = process_dataset_for_sequential(hf_dataset)
+    # 使用原始数据格式（可能包含时间信息）
+    u2i_index, i2u_index = build_index(args.dataset)
+    dataset = data_partition(args.dataset)
+    user_train, user_valid, user_test, usernum, itemnum = dataset
 
-        # 分割训练/验证/测试集
-        from dataset_hf import split_train_val_test
-
-        user_train, user_valid, user_test = split_train_val_test(user_history)
-
-        # 提取时间戳字典
-        user_timestamps = prepare_timestamp_dict(user_history)
-
-        # 计算时间间隔矩阵
-        print(f"Computing time matrices with time_span={args.time_span}...")
-        time_matrix_dict = compute_time_matrix(
-            user_train, args.maxlen, args.time_span, args.time_unit
-        )
-
-        dataset = [user_train, user_valid, user_test, usernum, itemnum]
-    else:
-        # 使用原始数据格式（不包含时间信息）
-        u2i_index, i2u_index = build_index(args.dataset)
-        dataset = data_partition(args.dataset)
-        user_train, user_valid, user_test, usernum, itemnum = dataset
+    # 尝试加载时间戳
+    user_timestamps = load_timestamps(args.dataset)
+    if user_timestamps is None:
+        print("No timestamp found, using zeros")
         user_timestamps = {u: [0] * len(user_train[u]) for u in user_train}
         time_matrix_dict = None
+    else:
+        print(f"Loaded timestamps for {len(user_timestamps)} users")
+        # 计算时间间隔矩阵
+        print(f"Computing time matrices with time_span={args.time_span}...")
+        from utils import compute_time_matrix_for_user
+
+        time_matrix_dict = {}
+        for u in user_train:
+            if len(user_train[u]) >= 1:
+                history = [
+                    {"iid": item, "timestamp": user_timestamps[u][i]}
+                    for i, item in enumerate(user_train[u])
+                ]
+                time_matrix_dict[u] = compute_time_matrix_for_user(
+                    history, args.maxlen, args.time_span, args.time_unit
+                )
 
     # 计算训练批次数
     num_batch = (len(user_train) - 1) // args.batch_size + 1
@@ -196,7 +186,7 @@ if __name__ == "__main__":
             batch_size=args.batch_size,
             maxlen=args.maxlen,
             time_span=args.time_span,
-            n_workers=3,
+            n_workers=args.num_workers,
             unit=args.time_unit,
         )
     else:
@@ -206,7 +196,7 @@ if __name__ == "__main__":
             itemnum,
             batch_size=args.batch_size,
             maxlen=args.maxlen,
-            n_workers=3,
+            n_workers=args.num_workers,
         )
 
     # 初始化模型
@@ -259,6 +249,11 @@ if __name__ == "__main__":
     # 最佳指标
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
+
+    # 早停机制变量
+    best_epoch = epoch_start_idx
+    patience_counter = 0
+    best_model_path = None
 
     # 时间统计
     T = 0.0
@@ -329,22 +324,40 @@ if __name__ == "__main__":
                 % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1])
             )
 
-            # 保存最佳模型
-            if (
-                t_valid[0] > best_val_ndcg
-                or t_valid[1] > best_val_hr
-                or t_test[0] > best_test_ndcg
-                or t_test[1] > best_test_hr
-            ):
-                best_val_ndcg = max(t_valid[0], best_val_ndcg)
-                best_val_hr = max(t_valid[1], best_val_hr)
-                best_test_ndcg = max(t_test[0], best_test_ndcg)
-                best_test_hr = max(t_test[1], best_test_hr)
+            # 早停检查
+            is_improved = False
+            if t_valid[0] > best_val_ndcg + args.min_delta:
+                is_improved = True
+                best_val_ndcg = t_valid[0]
+                patience_counter = 0
+            elif t_valid[1] > best_val_hr + args.min_delta:
+                is_improved = True
+                best_val_hr = t_valid[1]
+                patience_counter = 0
 
+            if is_improved:
+                best_epoch = epoch
+                best_test_ndcg = t_test[0]
+                best_test_hr = t_test[1]
+
+                # 保存最佳模型
                 folder = args.dataset + "_" + args.train_dir
                 model_name = "TiSASRec" if args.use_time else "SASRec"
-                fname = f"{model_name}.epoch={epoch}.lr={args.lr}.layer={args.num_blocks}.head={args.num_heads}.hidden={args.hidden_units}.maxlen={args.maxlen}.pth"
-                torch.save(model.state_dict(), os.path.join(folder, fname))
+                fname = f"{model_name}.best.epoch={epoch}.ndcg={t_valid[0]:.4f}.pth"
+                best_model_path = os.path.join(folder, fname)
+                torch.save(model.state_dict(), best_model_path)
+            else:
+                patience_counter += 1
+
+            # 早停触发
+            if patience_counter >= args.patience:
+                print(f"\nEarly stopping at epoch {epoch}")
+                print(
+                    f"Best epoch: {best_epoch}, valid NDCG: {best_val_ndcg:.4f}, HR: {best_val_hr:.4f}"
+                )
+                print(f"Test NDCG: {best_test_ndcg:.4f}, HR: {best_test_hr:.4f}")
+                print(f"Best model saved at: {best_model_path}")
+                break
 
             # 记录日志
             f.write(str(epoch) + " " + str(t_valid) + " " + str(t_test) + "\n")
