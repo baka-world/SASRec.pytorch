@@ -91,7 +91,25 @@ python main.py --dataset=ml-1m --train_dir=default --maxlen=200 --dropout_rate=0
 ```bash
 python main_tisasrec.py \
     --dataset=ml-1m \
-    --train_dir=tisasrec_default \
+    --train_dir=tisasrec_full \
+    --use_time \
+    --time_span=100 \
+    --time_unit=hour \
+    --device=cuda \
+    --lr=0.005 \
+    --l2_emb=0.0001 \
+    --dropout_rate=0.3 \
+    --num_epochs=1000 \
+    --patience=50 \
+    --batch_size=128 \
+    --num_workers=6
+```
+
+**推荐配置（ml-1m数据集）：**
+```bash
+python main_tisasrec.py \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_full \
     --use_time \
     --time_span=100 \
     --time_unit=hour \
@@ -104,7 +122,7 @@ python main_tisasrec.py \
 python main_tisasrec.py \
     --device=cuda \
     --dataset=ml-1m \
-    --train_dir=tisasrec_default \
+    --train_dir=tisasrec_full \
     --state_dict_path=[YOUR_CKPT_PATH] \
     --inference_only=true \
     --maxlen=200
@@ -122,6 +140,7 @@ python main_tisasrec.py \
 | `--train_dir` | 必填 | 训练结果保存目录 |
 | `--batch_size` | 128 | 每个批次的样本数量 |
 | `--lr` | 0.001 | 学习率 |
+| `--l2_emb` | 0.0001 | 嵌入层L2正则化系数 |
 | `--maxlen` | 200 | 序列最大长度 |
 | `--hidden_units` | 50 | 隐藏层维度 |
 | `--num_blocks` | 2 | Transformer编码器块数量 |
