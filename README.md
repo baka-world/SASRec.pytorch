@@ -2,7 +2,96 @@ update on 05/23/2025: thx to [Wentworth1028](https://github.com/Wentworth1028) a
 
 ---
 
-## TiSASRec 时序感知序列推荐（新增功能）
+## mHC: 流形约束超连接（新增功能）
+
+本仓库支持**mHC（Manifold-Constrained Hyper-Connections）**，这是对标准残差连接的扩展，通过将残差映射投影到双随机矩阵流形来增强训练稳定性和模型性能。
+
+### 核心思想
+
+传统残差连接：`x_{l+1} = x_l + F(x_l)`
+
+mHC残差连接：`x_{l+1} = H_l^{res} × x_l + H_l^{post}^T × F(H_l^{pre} × x_l, W_l)`
+
+**关键创新：**
+1. **扩展残差流宽度**：将维度C扩展为n×C（n为扩展因子，默认4）
+2. **三个可学习映射**：H_pre、H_post、H_res
+3. **流形约束**：H_res通过Sinkhorn-Knopp算法投影到双随机矩阵流形
+4. **身份映射保持**：双随机矩阵确保信号范数有界，梯度稳定
+
+### 技术优势
+
+| 特性 | 标准残差 | Hyper-Connections | mHC |
+|------|---------|-------------------|-----|
+| 残差流宽度 | C | n×C | n×C |
+| 身份映射保持 | ✓ | ✗ | ✓ |
+| 训练稳定性 | ✓ | ✗ | ✓ |
+| 信息交换能力 | ✗ | ✓ | ✓ |
+
+## 使用方法
+
+使用统一训练脚本 `main.py`，支持所有模型组合：
+
+```bash
+# SASRec (基准)
+python main.py --dataset=ml-1m --train_dir=sasrec_base
+
+# SASRec + mHC
+python main.py --dataset=ml-1m --train_dir=sasrec_mhc --use_mhc=True
+
+# TiSASRec
+python main.py --dataset=ml-1m --train_dir=tisasrec --use_time
+
+# TiSASRec + mHC
+python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc=True
+```
+
+### mHC参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--use_mhc` | False | 是否启用mHC |
+| `--mhc_expansion_rate` | 4 | 残差流扩展因子n |
+| `--mhc_init_gate` | 0.01 | 门控因子α初始值 |
+| `--mhc_sinkhorn_iter` | 20 | Sinkhorn-Knopp迭代次数 |
+
+### 参数量对比
+
+| 模型 | 参数量 | 增加比例 |
+|------|--------|----------|
+| SASRec | 115,328 | - |
+| SASRec+mHC | 140,012 | +21.4% |
+
+### mHC模块架构
+
+```
+Input x: (batch, seq, C)
+    ↓
+x_expanded = repeat(1,1,n): (batch, seq, n, C)
+    ↓
+H_pre: (batch, seq, n) ← sigmoid激活
+H_post: (batch, seq, n) ← sigmoid激活
+H_res: (batch, seq, n, n) ← Sinkhorn双随机矩阵
+    ↓
+x_res = H_res × x_expanded: (batch, seq, n, C)
+f_out = H_post × F(H_pre × x): (batch, seq, C)
+    ↓
+Output = sum_n(x_res) + f_out: (batch, seq, C)
+```
+
+### 引用信息
+
+**mHC论文：**
+```
+@misc{deepseek2025mhcsurvey,
+  title={mHC: Manifold-Constrained Hyper-Connections},
+  author={DeepSeek-AI},
+  year={2025}
+}
+```
+
+---
+
+## TiSASRec 时序感知序列推荐
 
 本仓库现在支持**TiSASRec（Time Interval Aware Self-Attentive Sequential Recommendation）**，这是对原始SASRec的扩展，引入了时间间隔信息来增强推荐效果。
 
@@ -234,14 +323,17 @@ Evaluating epoch:20, time: 125.6(s), valid (NDCG@10: 0.2654, HR@10: 0.4821), tes
 ```
 SASRec.pytorch/
 ├── python/
-│   ├── main.py              # SASRec训练脚本
-│   ├── main_tisasrec.py     # TiSASRec训练脚本（新增）
-│   ├── model.py             # 模型定义（含TiSASRec，新增）
-│   ├── utils.py             # 工具函数（含时序采样，新增）
-│   └── convert_ml1m.py      # ML-1M数据转换脚本（新增）
+│   ├── main.py              # 统一训练脚本（支持SASRec/TiSASRec + 可选mHC）
+│   ├── model.py             # SASRec/TiSASRec模型定义
+│   ├── model_mhc.py         # SASRec/TiSASRec + mHC模型定义
+│   ├── utils.py             # 工具函数
+│   └── convert_ml1m.py      # ML-1M数据转换脚本
 ├── data/                    # 数据目录
 │   ├── ml-1m/               # MovieLens 1M原始数据
 │   └── ml-1m.txt            # 转换后的数据（含时间戳）
+├── docs/
+│   ├── mHC_manifold_constrained_hyper_connections.md  # mHC论文
+│   └── MHC_README.md        # mHC实现文档
 ├── latex/                   # 论文源码
 └── README.md                # 本文档
 ```
@@ -249,6 +341,22 @@ SASRec.pytorch/
 ---
 
 ## 常见问题
+
+### mHC相关
+
+**Q: mHC与标准残差连接相比有什么优势？**
+A: mHC通过扩展残差流宽度和引入可学习的连接矩阵，增强了信息交换能力。同时，通过双随机矩阵约束保持身份映射属性，确保训练稳定性。
+
+**Q: mHC会增加多少参数量？**
+A: mHC约增加21%的参数量，主要来自三个线性映射层（nC→n, nC→n, nC→n²）。
+
+**Q: 如何选择mhc_expansion_rate？**
+A: 论文推荐n=4作为默认选择。更高的n值提供更强的表达能力，但也会增加计算和显存开销。
+
+**Q: Sinkhorn-Knopp迭代次数如何影响效果？**
+A: 迭代次数越多，矩阵越接近理想双随机矩阵。论文使用20次迭代，在精度和效率之间取得平衡。
+
+### TiSASRec相关
 
 **Q: TiSASRec与SASRec相比有什么优势？**
 A: TiSASRec通过融入时间间隔信息，能够更好地捕捉用户兴趣的演变，通常在具有时间信息的真实数据集上表现更优。
