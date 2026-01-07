@@ -25,6 +25,8 @@ import os
 import sys
 import time
 import math
+import gc
+import signal
 import torch
 import argparse
 
@@ -187,6 +189,27 @@ def get_user_timestamps(dataset_name):
 
 
 if __name__ == "__main__":
+    if torch.cuda.is_available():
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    sampler = None
+
+    def cleanup(signum, frame):
+        print("\n清理中...")
+        if sampler is not None:
+            try:
+                sampler.close()
+            except:
+                pass
+        gc.collect()
+        torch.cuda.empty_cache()
+        print("完成，退出。")
+        exit(0)
+
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
+
     if not os.path.isdir(args.dataset + "_" + args.train_dir):
         os.makedirs(args.dataset + "_" + args.train_dir)
 
