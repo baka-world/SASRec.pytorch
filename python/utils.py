@@ -471,8 +471,10 @@ def discretize_time_interval(time_diff, time_span, unit="hour"):
     unit_seconds = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
     divisor = unit_seconds.get(unit, 3600)
 
-    # 线性离散化
-    discretized = max(1, min(time_span, int(time_diff // divisor) + 1))
+    # 线性离散化，然后钳制到 [0, time_span]
+    # 注意：允许返回 0 用于填充
+    discretized = int(time_diff // divisor) + 1
+    discretized = max(0, min(time_span, discretized))
     return discretized
 
 

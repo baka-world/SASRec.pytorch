@@ -352,6 +352,7 @@ class TiSASRec(torch.nn.Module):
         abs_pos_V = self.abs_pos_V_emb_dropout(abs_pos_V)
 
         time_matrices = torch.LongTensor(time_matrices).to(self.dev)
+        time_matrices = torch.clamp(time_matrices, min=0, max=self.time_span)
         time_matrix_K = self.time_matrix_K_emb(time_matrices)
         time_matrix_V = self.time_matrix_V_emb(time_matrices)
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
