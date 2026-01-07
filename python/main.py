@@ -12,13 +12,13 @@ SASRec Benchmark: Unified Training Script for All Model Variants
     python main_benchmark.py --dataset=ml-1m --train_dir=sasrec_base
 
     # SASRec + mHC
-    python main_benchmark.py --dataset=ml-1m --train_dir=sasrec_mhc --use_mhc=True
+    python main_benchmark.py --dataset=ml-1m --train_dir=sasrec_mhc --use_mhc
 
     # TiSASRec
     python main_benchmark.py --dataset=ml-1m --train_dir=tisasrec --use_time
 
     # TiSASRec + mHC
-    python main_benchmark.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc=True
+    python main_benchmark.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc
 """
 
 import os

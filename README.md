@@ -36,13 +36,13 @@ mHC残差连接：`x_{l+1} = H_l^{res} × x_l + H_l^{post}^T × F(H_l^{pre} × x
 python main.py --dataset=ml-1m --train_dir=sasrec_base
 
 # SASRec + mHC
-python main.py --dataset=ml-1m --train_dir=sasrec_mhc --use_mhc=True
+python main.py --dataset=ml-1m --train_dir=sasrec_mhc --use_mhc
 
 # TiSASRec
 python main.py --dataset=ml-1m --train_dir=tisasrec --use_time
 
 # TiSASRec + mHC
-python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc=True
+python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc
 ```
 
 ### mHC参数说明

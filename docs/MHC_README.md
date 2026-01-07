@@ -25,12 +25,12 @@ mHC extends the traditional residual connection paradigm by:
 
 ### Standard SASRec (without mHC)
 ```bash
-python main.py --dataset=Beauty --train_dir=baseline --use_mhc=False
+python main.py --dataset=Beauty --train_dir=baseline
 ```
 
 ### SASRec with mHC
 ```bash
-python main_mhc.py --dataset=Beauty --train_dir=mhc_test --use_mhc=True --mhc_expansion_rate=4
+python main_mhc.py --dataset=Beauty --train_dir=mhc_test --use_mhc --mhc_expansion_rate=4
 ```
 
 ### Key Arguments
