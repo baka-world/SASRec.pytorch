@@ -80,9 +80,18 @@ If loss stagnates around 0.45:
 ## Memory Issues
 
 If CUDA out of memory:
+
+| GPU Memory | Recommended Config |
+|------------|-------------------|
+| 8 GB | `--batch_size 32 --hidden_units 64 --maxlen 100` |
+| 16 GB | `--batch_size 64 --hidden_units 128` |
+| 24+ GB | `--batch_size 128 --hidden_units 256` (default) |
+
+Other options:
 - Reduce batch_size: `--batch_size=64`
+- Reduce sequence length: `--maxlen=100`
+- Reduce model size: `--hidden_units=128`
 - Use CPU: `--device=cpu`
-- Reduce model size: `--num_blocks=1`
 
 ## File Structure
 
