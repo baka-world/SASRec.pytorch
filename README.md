@@ -41,11 +41,15 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc
 | `--train_dir` | required | Output directory |
 | `--batch_size` | 128 | Batch size |
 | `--lr` | 0.001 | Learning rate |
+| `--lr_decay_step` | 1000 | LR decay step (per epoch) |
+| `--lr_decay_rate` | 0.95 | LR decay rate |
+| `--warmup_steps` | 100 | Warmup steps (0 to disable) |
 | `--maxlen` | 200 | Max sequence length |
-| `--hidden_units` | 50 | Hidden dimension |
-| `--num_blocks` | 2 | Transformer blocks |
-| `--num_heads` | 1 | Attention heads |
+| `--hidden_units` | 256 | Hidden dimension |
+| `--num_blocks` | 3 | Transformer blocks |
+| `--num_heads` | 2 | Attention heads |
 | `--dropout_rate` | 0.2 | Dropout rate |
+| `--l2_emb` | 0.0 | L2 regularization |
 | `--device` | cuda | cuda or cpu |
 | `--use_time` | False | Enable TiSASRec |
 | `--use_mhc` | False | Enable mHC |
@@ -53,6 +57,25 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc
 | `--mhc_sinkhorn_iter` | 20 | Sinkhorn iterations |
 | `--time_span` | 100 | Time interval range |
 | `--time_unit` | hour | Time unit (second/minute/hour/day) |
+
+## Training Tips
+
+For better performance, try larger models:
+
+```bash
+# Large model
+python main.py --dataset=ml-1m --train_dir=sasrec_large \
+    --hidden_units=256 --num_blocks=3 --num_heads=2
+
+# Extra large model
+python main.py --dataset=ml-1m --train_dir=sasrec_xl \
+    --hidden_units=512 --num_blocks=4 --num_heads=4 --batch_size=256
+```
+
+If loss stagnates around 0.45:
+- Increase model capacity (`--hidden_units`, `--num_blocks`)
+- Use learning rate decay (`--lr_decay_step=500 --lr_decay_rate=0.95`)
+- Add warmup (`--warmup_steps=100`)
 
 ## Memory Issues
 

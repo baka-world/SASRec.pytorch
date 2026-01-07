@@ -24,6 +24,7 @@ SASRec Benchmark: Unified Training Script for All Model Variants
 import os
 import sys
 import time
+import math
 import torch
 import argparse
 
@@ -40,6 +41,18 @@ def str2bool(s):
     return s == "true"
 
 
+def get_lr(step, args):
+    """计算当前学习率，支持warmup和衰减"""
+    if args.warmup_steps > 0 and step < args.warmup_steps:
+        # Warmup阶段：线性增加学习率
+        return args.lr * (step + 1) / args.warmup_steps
+    else:
+        # 衰减阶段：按步长衰减
+        decay_steps = step - args.warmup_steps
+        decay_factor = args.lr_decay_rate ** (decay_steps / args.lr_decay_step)
+        return args.lr * decay_factor
+
+
 parser = argparse.ArgumentParser(description="SASRec Benchmark Training")
 
 # 基础参数
@@ -49,14 +62,21 @@ parser.add_argument(
     "--batch_size", default=128, type=int, help="每个训练批次的样本数量"
 )
 parser.add_argument("--lr", default=0.001, type=float, help="学习率")
-parser.add_argument("--maxlen", default=200, type=int, help="序列的最大长度")
-parser.add_argument("--hidden_units", default=50, type=int, help="隐藏层维度")
 parser.add_argument(
-    "--num_blocks", default=2, type=int, help="Transformer编码器块的数量"
+    "--lr_decay_step", default=1000, type=int, help="学习率衰减步长（按epoch）"
+)
+parser.add_argument("--lr_decay_rate", default=0.95, type=float, help="学习率衰减率")
+parser.add_argument(
+    "--warmup_steps", default=100, type=int, help="Warmup步数（0表示不使用warmup）"
+)
+parser.add_argument("--maxlen", default=200, type=int, help="序列的最大长度")
+parser.add_argument("--hidden_units", default=256, type=int, help="隐藏层维度")
+parser.add_argument(
+    "--num_blocks", default=3, type=int, help="Transformer编码器块的数量"
 )
 parser.add_argument("--num_epochs", default=1000, type=int, help="训练轮数")
 parser.add_argument(
-    "--num_heads", default=1, type=int, help="多头注意力机制中注意力头的数量"
+    "--num_heads", default=2, type=int, help="多头注意力机制中注意力头的数量"
 )
 parser.add_argument("--dropout_rate", default=0.2, type=float, help="Dropout比率")
 parser.add_argument("--l2_emb", default=0.0, type=float, help="嵌入层的L2正则化系数")
@@ -245,6 +265,8 @@ if __name__ == "__main__":
     T = 0.0
     t0 = time.time()
 
+    total_step = 0
+
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only:
             break
@@ -288,7 +310,17 @@ if __name__ == "__main__":
 
             loss.backward()
             adam_optimizer.step()
-            print("loss in epoch {} iteration {}: {}".format(epoch, step, loss.item()))
+
+            current_lr = get_lr(total_step, args)
+            for param_group in adam_optimizer.param_groups:
+                param_group["lr"] = current_lr
+
+            total_step += 1
+            print(
+                "loss in epoch {} iteration {}: {:.4f} lr: {:.6f}".format(
+                    epoch, step, loss.item(), current_lr
+                )
+            )
 
         if epoch % 20 == 0:
             model.eval()

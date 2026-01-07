@@ -41,11 +41,15 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc
 | `--train_dir` | 必填 | 输出目录 |
 | `--batch_size` | 128 | 批次大小 |
 | `--lr` | 0.001 | 学习率 |
+| `--lr_decay_step` | 1000 | 学习率衰减步长（按epoch） |
+| `--lr_decay_rate` | 0.95 | 学习率衰减率 |
+| `--warmup_steps` | 100 | Warmup步数（0表示不使用） |
 | `--maxlen` | 200 | 最大序列长度 |
-| `--hidden_units` | 50 | 隐藏层维度 |
-| `--num_blocks` | 2 | Transformer块数 |
-| `--num_heads` | 1 | 注意力头数 |
+| `--hidden_units` | 256 | 隐藏层维度 |
+| `--num_blocks` | 3 | Transformer块数 |
+| `--num_heads` | 2 | 注意力头数 |
 | `--dropout_rate` | 0.2 | Dropout比例 |
+| `--l2_emb` | 0.0 | L2正则化系数 |
 | `--device` | cuda | 训练设备 |
 | `--use_time` | False | 启用TiSASRec |
 | `--use_mhc` | False | 启用mHC |
@@ -53,6 +57,25 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc
 | `--mhc_sinkhorn_iter` | 20 | Sinkhorn迭代次数 |
 | `--time_span` | 100 | 时间间隔范围 |
 | `--time_unit` | hour | 时间单位 |
+
+## 训练建议
+
+尝试更大的模型以获得更好的性能：
+
+```bash
+# 大模型
+python main.py --dataset=ml-1m --train_dir=sasrec_large \
+    --hidden_units=256 --num_blocks=3 --num_heads=2
+
+# 超大模型
+python main.py --dataset=ml-1m --train_dir=sasrec_xl \
+    --hidden_units=512 --num_blocks=4 --num_heads=4 --batch_size=256
+```
+
+如果loss卡在0.45左右：
+- 增加模型容量（`--hidden_units`、`--num_blocks`）
+- 使用学习率衰减（`--lr_decay_step=500 --lr_decay_rate=0.95`）
+- 添加warmup（`--warmup_steps=100`）
 
 ## 显存不足
 

@@ -330,27 +330,17 @@ def evaluate(model, dataset, args):
         if u not in train or len(train[u]) < 1 or u not in test or len(test[u]) < 1:
             continue
 
-        # 构建用户历史序列
+        # 构建用户历史序列（仅使用训练集，不包含验证集，避免数据泄露）
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
         train_items = train[u]
         if train_items and isinstance(train_items[0], dict):
-            # 验证集物品
-            if valid[u] and isinstance(valid[u][0], dict):
-                seq[idx] = valid[u][0]["iid"]
-            elif valid[u]:
-                seq[idx] = valid[u][0]
-            idx -= 1
             for i in range(len(train_items) - 1, -1, -1):
                 seq[idx] = train_items[i]["iid"]
                 idx -= 1
                 if idx == -1:
                     break
         else:
-            if valid[u]:
-                seq[idx] = valid[u][0]
-            idx -= 1
             for i in reversed(train_items):
                 seq[idx] = i
                 idx -= 1
@@ -415,9 +405,9 @@ def evaluate_valid(model, dataset, args):
         if u not in train or len(train[u]) < 1 or u not in valid or len(valid[u]) < 1:
             continue
 
+        # 构建用户历史序列（仅使用训练集，不包含验证集）
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
         train_items = train[u]
         if train_items and isinstance(train_items[0], dict):
             for i in range(len(train_items) - 1, -1, -1):
@@ -740,28 +730,17 @@ def evaluate_tisasrec(model, dataset, args):
         if u not in train or len(train[u]) < 1 or u not in test or len(test[u]) < 1:
             continue
 
-        # 构建用户历史序列
+        # 构建用户历史序列（仅使用训练集，不包含验证集）
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
         train_items = train[u]
         if train_items and isinstance(train_items[0], dict):
-            # 先加入验证集物品，再加入训练集历史
-            if valid[u] and isinstance(valid[u][0], dict):
-                seq[idx] = valid[u][0]["iid"]
-            elif valid[u]:
-                seq[idx] = valid[u][0]
-            idx -= 1
             for i in range(len(train_items) - 1, -1, -1):
                 seq[idx] = train_items[i]["iid"]
                 idx -= 1
                 if idx == -1:
                     break
         else:
-            # 先加入验证集物品，再加入训练集历史
-            if valid[u]:
-                seq[idx] = valid[u][0]
-            idx -= 1
             for i in reversed(train_items):
                 seq[idx] = i
                 idx -= 1
@@ -848,9 +827,9 @@ def evaluate_valid_tisasrec(model, dataset, args):
         if u not in train or len(train[u]) < 1 or u not in valid or len(valid[u]) < 1:
             continue
 
+        # 构建用户历史序列（仅使用训练集，不包含验证集）
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
-        # 支持两种格式：1) [item_id, ...] 2) [{'iid': item_id, ...}, ...]
         train_items = train[u]
         if train_items and isinstance(train_items[0], dict):
             for i in range(len(train_items) - 1, -1, -1):
