@@ -150,7 +150,7 @@ def get_model(usernum, itemnum, time_span):
 def get_sampler(user_train, usernum, itemnum, time_span):
     """根据参数选择合适的采样器"""
     if args.use_time:
-        user_timestamps = get_user_timestamps(args.dataset)
+        user_timestamps = get_user_timestamps(args.dataset, user_train)
         return WarpSamplerWithTime(
             user_train,
             user_timestamps,
@@ -173,16 +173,17 @@ def get_sampler(user_train, usernum, itemnum, time_span):
         )
 
 
-def get_user_timestamps(dataset_name):
+def get_user_timestamps(dataset_name, user_train=None):
     """加载用户时间戳数据"""
     data = np.loadtxt("data/%s.txt" % dataset_name, dtype=np.int32)
-    user_train = data_partition(dataset_name)[0]
+    if user_train is None:
+        user_train = data_partition(dataset_name)[0]
     timestamps = {}
     for u in user_train:
         user_items = data[data[:, 0] == u]
         timestamps[u] = (
             user_items[:, 2].tolist()
-            if len(user_items[0]) > 2
+            if len(user_items) > 0 and user_items.shape[1] > 2
             else [0] * len(user_items)
         )
     return timestamps
