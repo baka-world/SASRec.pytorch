@@ -29,6 +29,7 @@ import gc
 import signal
 import torch
 import argparse
+from torch.cuda import amp
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -114,6 +115,14 @@ parser.add_argument(
 )
 parser.add_argument(
     "--mhc_sinkhorn_iter", default=20, type=int, help="mHC Sinkhorn-Knopp迭代次数"
+)
+
+# 训练优化参数
+parser.add_argument(
+    "--use_amp",
+    action="store_true",
+    default=True,
+    help="启用自动混合精度训练（节省显存）",
 )
 
 # TiSASRec参数
@@ -282,6 +291,7 @@ if __name__ == "__main__":
 
     bce_criterion = torch.nn.BCEWithLogitsLoss()
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
+    scaler = amp.GradScaler() if args.use_amp else None
 
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
@@ -307,7 +317,8 @@ if __name__ == "__main__":
                     np.array(neg),
                     np.array(time_mat),
                 )
-                pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
+                with amp.autocast(enabled=args.use_amp):
+                    pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
             else:
                 u, seq, pos, neg = batch_data
                 u, seq, pos, neg = (
@@ -316,7 +327,8 @@ if __name__ == "__main__":
                     np.array(pos),
                     np.array(neg),
                 )
-                pos_logits, neg_logits = model(u, seq, pos, neg)
+                with amp.autocast(enabled=args.use_amp):
+                    pos_logits, neg_logits = model(u, seq, pos, neg)
 
             pos_labels, neg_labels = (
                 torch.ones(pos_logits.shape, device=args.device),
@@ -332,8 +344,13 @@ if __name__ == "__main__":
             for param in model.item_emb.parameters():
                 loss += args.l2_emb * torch.sum(param**2)
 
-            loss.backward()
-            adam_optimizer.step()
+            if args.use_amp:
+                scaler.scale(loss).backward()
+                scaler.step(adam_optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                adam_optimizer.step()
 
             current_lr = get_lr(total_step, args)
             for param_group in adam_optimizer.param_groups:
