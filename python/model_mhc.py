@@ -71,7 +71,11 @@ class NumericallyStableMultiheadAttention(torch.nn.Module):
         attn_scores = torch.matmul(Q, K.transpose(2, 3)) / (self.head_size**0.5)
 
         if attn_mask is not None:
-            attn_scores = attn_scores.masked_fill(attn_mask, FLOAT_MIN)
+            mask = attn_mask
+            if mask.dim() == 2:
+                mask = mask.unsqueeze(0).unsqueeze(0)
+            mask = mask.expand(-1, self.num_heads, -1, -1)
+            attn_scores = attn_scores.masked_fill(mask, FLOAT_MIN)
 
         attn_weights = torch.nn.functional.softmax(attn_scores, dim=-1)
         attn_weights = self.dropout(attn_weights)
