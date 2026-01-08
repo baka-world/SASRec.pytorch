@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import sys
 
-FLOAT_MIN = -1e4
+FLOAT_MIN = -1000.0
 
 
 def sinkhorn_knopp(M, max_iter=20):
