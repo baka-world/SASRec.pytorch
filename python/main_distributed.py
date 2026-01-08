@@ -451,7 +451,7 @@ if __name__ == "__main__":
 
         epoch_loss = (
             accumulated_loss / args.gradient_accumulation_steps
-            if accumulated_loss
+            if accumulated_loss is not None
             else 0
         )
         if is_main_process():
