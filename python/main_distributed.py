@@ -25,6 +25,7 @@ import math
 import gc
 import signal
 import torch
+
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -247,8 +248,16 @@ if __name__ == "__main__":
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
 
     num_batch = (len(user_train) - 1) // args.batch_size + 1
+    if is_main_process():
+        print(
+            f"[Debug] Total batch_size: {args.batch_size}, num_batch per epoch: {num_batch}"
+        )
 
     cc = sum(len(user_train[u]) for u in user_train)
+    if is_main_process():
+        print(
+            f"[Debug] batch_size={args.batch_size}, world_size={args.world_size}, num_batch={num_batch}"
+        )
     if is_main_process():
         print(f"Average sequence length: {cc / len(user_train):.2f}")
 
@@ -283,7 +292,6 @@ if __name__ == "__main__":
             device_ids=[args.local_rank],
             output_device=args.local_rank,
             broadcast_buffers=False,  # 禁用以提升性能
-            
         )
 
     epoch_start_idx = 1
