@@ -553,12 +553,25 @@ class SASRec(torch.nn.Module):
 
     def log2feats(self, log_seqs):
         seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+
+        if torch.isnan(seqs).any():
+            print(f"DEBUG: NaN in item_emb output")
+            import sys
+
+            sys.exit(1)
+
         seqs *= self.item_emb.embedding_dim**0.5
 
         poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
         poss = poss * (log_seqs != 0)
         seqs += self.pos_emb(torch.LongTensor(poss).to(self.dev))
         seqs = self.emb_dropout(seqs)
+
+        if torch.isnan(seqs).any():
+            print(f"DEBUG: NaN in seqs after emb_dropout")
+            import sys
+
+            sys.exit(1)
 
         for i in range(len(self.attention_layers)):
             batch_size, seq_len, hidden_dim = seqs.shape
