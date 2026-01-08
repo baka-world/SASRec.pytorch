@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
     bce_criterion = torch.nn.BCEWithLogitsLoss()
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
-    scaler = amp.GradScaler("cuda") if args.use_amp else None
+    scaler = torch.amp.GradScaler("cuda") if args.use_amp else None
 
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
@@ -322,24 +322,29 @@ if __name__ == "__main__":
         for step in range(num_batch):
             batch_data = sampler.next_batch()
 
+            if step == 0 and is_main_process():
+                print(f"[Debug] Rank {args.local_rank}: First batch loaded")
+
             if args.use_time or not args.no_time:
                 u, seq, pos, neg, time_mat = batch_data
-                u = torch.LongTensor(u).to(args.local_rank)
-                seq = torch.LongTensor(seq).to(args.local_rank)
-                pos = torch.LongTensor(pos).to(args.local_rank)
-                neg = torch.LongTensor(neg).to(args.local_rank)
-                time_mat = torch.LongTensor(time_mat).to(args.local_rank)
+                u = torch.LongTensor(np.array(u)).to(args.local_rank)
+                seq = torch.LongTensor(np.array(seq)).to(args.local_rank)
+                pos = torch.LongTensor(np.array(pos)).to(args.local_rank)
+                neg = torch.LongTensor(np.array(neg)).to(args.local_rank)
+                time_mat = torch.LongTensor(np.array(time_mat)).to(args.local_rank)
 
-                with amp.autocast("cuda", enabled=args.use_amp):
+                with torch.amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
+                    if step == 0 and is_main_process():
+                        print(f"[Debug] Rank {args.local_rank}: Forward pass done")
             else:
                 u, seq, pos, neg = batch_data
-                u = torch.LongTensor(u).to(args.local_rank)
-                seq = torch.LongTensor(seq).to(args.local_rank)
-                pos = torch.LongTensor(pos).to(args.local_rank)
-                neg = torch.LongTensor(neg).to(args.local_rank)
+                u = torch.LongTensor(np.array(u)).to(args.local_rank)
+                seq = torch.LongTensor(np.array(seq)).to(args.local_rank)
+                pos = torch.LongTensor(np.array(pos)).to(args.local_rank)
+                neg = torch.LongTensor(np.array(neg)).to(args.local_rank)
 
-                with amp.autocast("cuda", enabled=args.use_amp):
+                with torch.amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, pos, neg)
 
             pos_labels = torch.ones(pos_logits.shape, device=args.local_rank)
