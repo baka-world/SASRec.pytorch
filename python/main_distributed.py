@@ -68,11 +68,19 @@ def setup_distributed(args):
             args.world_size = int(os.environ["SLURM_NTASKS"])
             args.rank = int(os.environ["SLURM_PROCID"])
         else:
-            args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
-            args.rank = int(os.environ.get("RANK", 0))
-            args.world_size = int(
-                os.environ.get("WORLD_SIZE", torch.cuda.device_count())
-            )
+        args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        args.rank = int(os.environ.get("RANK", 0))
+        
+        env_world_size = os.environ.get("WORLD_SIZE")
+        if env_world_size is not None:
+            args.world_size = int(env_world_size)
+            # 检测异常值：如果world_size超过GPU数量的10倍，使用GPU数量
+            gpu_count = torch.cuda.device_count()
+            if args.world_size > gpu_count * 10:
+                print(f"[Warning] WORLD_SIZE={args.world_size} 异常，使用GPU数量={gpu_count}")
+                args.world_size = gpu_count
+        else:
+            args.world_size = torch.cuda.device_count()
 
         torch.cuda.set_device(args.local_rank)
         dist.init_process_group(
@@ -87,8 +95,18 @@ def setup_distributed(args):
                 f"分布式训练初始化完成 | GPU数量: {args.world_size} | 主节点端口: {args.master_port}"
             )
 
+        if is_main_process():
+            print(
+                f"[Debug] Before: batch_size={args.batch_size}, world_size={args.world_size}"
+            )
+
         args.batch_size = max(1, args.batch_size // args.world_size)
         args.num_workers = max(1, args.num_workers // args.world_size)
+
+        if is_main_process():
+            print(
+                f"[Debug] After: batch_size={args.batch_size}, num_workers={args.num_workers}"
+            )
 
 
 def cleanup_distributed():
