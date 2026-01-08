@@ -26,4 +26,5 @@ torchrun \
     main_distributed.py \
     --dataset=ml-1m \
     --train_dir=tisasrec_dist \
-    --multi_gpu
+    --multi_gpu \
+    "$@"
