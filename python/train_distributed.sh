@@ -24,7 +24,5 @@ torchrun \
     --master_port=29500 \
     -- \
     main_distributed.py \
-    --dataset=ml-1m \
-    --train_dir=tisasrec_dist \
     --multi_gpu \
     "$@"
