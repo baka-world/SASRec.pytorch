@@ -350,7 +350,8 @@ if __name__ == "__main__":
         for step in range(num_batch):
             batch_data = sampler.next_batch()
 
-            if args.use_time or not args.no_time:
+            use_time_model = args.use_time and not args.no_time
+            if use_time_model:
                 u, seq, pos, neg, time_mat = batch_data
                 u = torch.LongTensor(np.array(u)).to(args.local_rank)
                 seq = torch.LongTensor(np.array(seq)).to(args.local_rank)
