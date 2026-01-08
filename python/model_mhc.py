@@ -575,8 +575,20 @@ class SASRec(torch.nn.Module):
                     x, x, x, attn_mask=attention_mask
                 )
 
+                if torch.isnan(mha_outputs).any():
+                    print(f"DEBUG: NaN in mha_outputs at block {i}")
+                    import sys
+
+                    sys.exit(1)
+
                 seqs_T = seqs_T + mha_outputs
                 seqs_after_attn = torch.transpose(seqs_T, 0, 1)
+
+                if torch.isnan(seqs_after_attn).any():
+                    print(f"DEBUG: NaN in seqs_after_attn at block {i}")
+                    import sys
+
+                    sys.exit(1)
 
                 if self.use_mhc:
                     seqs = self.mhc_attn[i](seqs, seqs_after_attn)
@@ -612,8 +624,21 @@ class SASRec(torch.nn.Module):
                 mha_outputs, _ = self.attention_layers[i](
                     seqs_T, seqs_T, seqs_T, attn_mask=attention_mask
                 )
+
+                if torch.isnan(mha_outputs).any():
+                    print(f"DEBUG: NaN in mha_outputs at block {i} (else branch)")
+                    import sys
+
+                    sys.exit(1)
+
                 seqs_T = self.attention_layernorms[i](seqs_T + mha_outputs)
                 seqs_after_attn = torch.transpose(seqs_T, 0, 1)
+
+                if torch.isnan(seqs_after_attn).any():
+                    print(f"DEBUG: NaN in seqs_after_attn at block {i} (else branch)")
+                    import sys
+
+                    sys.exit(1)
 
                 if self.use_mhc:
                     seqs = self.mhc_attn[i](seqs, seqs_after_attn)
