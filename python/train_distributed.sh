@@ -20,9 +20,10 @@ export MKL_NUM_THREADS=4
 torchrun \
     --nproc_per_node=$NUM_GPUS \
     --master_port=29500 \
+    -- \
     main_distributed.py \
-    --dataset=$1 \
-    --train_dir=$2 \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_dist \
     --batch_size=512 \
     --num_epochs=200 \
     --lr=0.001 \
@@ -32,5 +33,4 @@ torchrun \
     --maxlen=100 \
     --dropout_rate=0.2 \
     --use_amp \
-    --multi_gpu \
-    "$@"
+    --multi_gpu
