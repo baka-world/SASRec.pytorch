@@ -281,13 +281,39 @@ class mHCResidual(torch.nn.Module):
 
         func_expanded = function_output.unsqueeze(2).repeat(1, 1, self.n, 1)
 
+        if torch.isnan(func_expanded).any():
+            print(f"DEBUG: NaN in func_expanded")
+            import sys
+
+            sys.exit(1)
+
         x_in = (H_pre * x_expanded).sum(dim=2)
         f_out = (H_post * func_expanded).sum(dim=2)
+
+        if torch.isnan(f_out).any():
+            print(f"DEBUG: NaN in f_out after sum")
+            import sys
+
+            sys.exit(1)
 
         x_res = torch.einsum("bsnc,bsnm->bsmc", x_expanded, H_res)
         x_res = x_res.sum(dim=2)
 
+        if torch.isnan(x_res).any():
+            print(f"DEBUG: NaN in x_res after einsum")
+            print(f"  x_expanded has NaN: {torch.isnan(x_expanded).any().item()}")
+            print(f"  H_res has NaN: {torch.isnan(H_res).any().item()}")
+            import sys
+
+            sys.exit(1)
+
         output = x_res + f_out
+
+        if torch.isnan(output).any():
+            print(f"DEBUG: NaN in output before return")
+            import sys
+
+            sys.exit(1)
 
         return output
 
