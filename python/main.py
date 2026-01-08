@@ -105,7 +105,10 @@ parser.add_argument(
     help="启用TiSASRec（使用时序感知机制）",
 )
 parser.add_argument(
-    "--use_mhc", action="store_true", default=False, help="启用mHC（流形约束超连接）"
+    "--no_mhc",
+    action="store_true",
+    default=False,
+    help="禁用mHC（流形约束超连接），使用标准SASRec",
 )
 
 # mHC参数
@@ -149,14 +152,14 @@ args = parser.parse_args()
 def get_model(usernum, itemnum, time_span):
     """根据参数选择合适的模型"""
     if args.use_time:
-        if args.use_mhc:
+        if not args.no_mhc:
             print(f"==> 使用 TiSASRec + mHC (expansion_rate={args.mhc_expansion_rate})")
             return TiSASRec_mHC(usernum, itemnum, time_span, args)
         else:
             print("==> 使用 TiSASRec")
             return TiSASRec(usernum, itemnum, time_span, args)
     else:
-        if args.use_mhc:
+        if not args.no_mhc:
             print(f"==> 使用 SASRec + mHC (expansion_rate={args.mhc_expansion_rate})")
             return SASRec_mHC(usernum, itemnum, args)
         else:
