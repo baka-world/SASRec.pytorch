@@ -17,7 +17,7 @@ export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 
 # 启动分布式训练
-python -m torch.distributed.launch \
+torchrun \
     --nproc_per_node=$NUM_GPUS \
     --master_port=29500 \
     main_distributed.py \

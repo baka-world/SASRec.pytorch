@@ -135,6 +135,9 @@ parser.add_argument(
     "--time_unit", default="hour", type=str, choices=["second", "minute", "hour", "day"]
 )
 parser.add_argument(
+    "--local_rank", type=int, default=0, help="Local rank for distributed training"
+)
+parser.add_argument(
     "--multi_gpu", action="store_true", default=False, help="启用多卡训练"
 )
 parser.add_argument("--backend", type=str, default="nccl", choices=["nccl", "gloo"])
