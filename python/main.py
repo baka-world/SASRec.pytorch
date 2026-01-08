@@ -61,9 +61,7 @@ parser = argparse.ArgumentParser(description="SASRec Benchmark Training")
 # 基础参数
 parser.add_argument("--dataset", required=True, help="数据集名称")
 parser.add_argument("--train_dir", required=True, help="训练结果保存的目录名")
-parser.add_argument(
-    "--batch_size", default=128, type=int, help="每个训练批次的样本数量"
-)
+parser.add_argument("--batch_size", default=64, type=int, help="每个训练批次的样本数量")
 parser.add_argument("--lr", default=0.001, type=float, help="学习率")
 parser.add_argument(
     "--lr_decay_step", default=1000, type=int, help="学习率衰减步长（按epoch）"
@@ -72,10 +70,10 @@ parser.add_argument("--lr_decay_rate", default=0.95, type=float, help="学习率
 parser.add_argument(
     "--warmup_steps", default=100, type=int, help="Warmup步数（0表示不使用warmup）"
 )
-parser.add_argument("--maxlen", default=200, type=int, help="序列的最大长度")
-parser.add_argument("--hidden_units", default=256, type=int, help="隐藏层维度")
+parser.add_argument("--maxlen", default=100, type=int, help="序列的最大长度")
+parser.add_argument("--hidden_units", default=128, type=int, help="隐藏层维度")
 parser.add_argument(
-    "--num_blocks", default=3, type=int, help="Transformer编码器块的数量"
+    "--num_blocks", default=2, type=int, help="Transformer编码器块的数量"
 )
 parser.add_argument("--num_epochs", default=1000, type=int, help="训练轮数")
 parser.add_argument(
