@@ -446,7 +446,7 @@ if __name__ == "__main__":
                     args.hidden_units,
                     args.maxlen,
                     args.use_time or not args.no_time,
-                    args.use_mhc,
+                    not args.no_mhc,
                 )
                 torch.save(model.state_dict(), os.path.join(folder, fname))
 
@@ -466,7 +466,7 @@ if __name__ == "__main__":
                 args.hidden_units,
                 args.maxlen,
                 args.use_time or not args.no_time,
-                args.use_mhc,
+                not args.no_mhc,
             )
             torch.save(model.state_dict(), os.path.join(folder, fname))
 
