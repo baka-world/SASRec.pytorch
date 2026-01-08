@@ -389,6 +389,9 @@ if __name__ == "__main__":
         for step in range(num_batch):
             batch_data = sampler.next_batch()
 
+            if is_main_process() and step % 50 == 0:
+                print(f"[Debug] Step {step}: batch_data ready")
+
             use_time_model = args.use_time and not args.no_time
             if use_time_model:
                 u, seq, pos, neg, time_mat = batch_data
