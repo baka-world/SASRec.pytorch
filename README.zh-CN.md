@@ -77,24 +77,142 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
 - TiSASRec：`--no_mhc`
 - TiSASRec + mHC：（默认）
 
-## 训练建议
+## 调参指南
 
-尝试更大的模型以获得更好的性能：
+本指南介绍关键超参数及其调优方法，帮助你获得最佳性能。
 
+### 1. 模型容量参数
+
+| 参数 | 范围 | 影响 | 推荐起始值 |
+|------|------|------|-----------|
+| `--hidden_units` | 50-512 | 嵌入维度，越大容量越高 | 50（基准） |
+| `--num_blocks` | 1-6 | Transformer层数，越深越复杂 | 2（基准） |
+| `--num_heads` | 1-8 | 注意力头数，越多越精细 | 2（基准） |
+
+**调参策略**：
+- 先用基准配置（50, 2, 2）验证训练正常
+- 首先增加 `hidden_units` 以提高容量
+- 其次增加 `num_blocks` 以增加深度
+- `num_heads` 应与 `hidden_units` 成比例（hidden_units % num_heads == 0）
+
+### 2. 训练参数
+
+| 参数 | 范围 | 影响 | 推荐起始值 |
+|------|------|------|-----------|
+| `--batch_size` | 32-256 | 批次大小，影响梯度稳定性 | 128（基准） |
+| `--lr` | 0.0001-0.005 | 学习率 | 0.001（基准） |
+| `--warmup_steps` | 0-500 | 预热步数 | 100（基准） |
+| `--num_epochs` | 200-2000 | 训练轮数 | 1000（基准） |
+
+**调参策略**：
+- 批次越大 → 梯度越稳定，可以使用更大的学习率
+- 如果loss震荡：减小lr或增大batch_size
+- 如果loss下降太慢：增大lr（最大0.005）
+- 如果loss出现NaN：减小lr，检查数据
+
+### 3. 正则化参数
+
+| 参数 | 范围 | 影响 | 推荐起始值 |
+|------|------|------|-----------|
+| `--dropout_rate` | 0.0-0.5 | Dropout比例 | 0.2（基准） |
+| `--l2_emb` | 0.0-0.001 | L2正则化系数 | 0.0（基准） |
+
+**调参策略**：
+- 过拟合严重（训练↓，验证↑）：增加dropout_rate到0.3-0.4
+- 过拟合轻微：减小dropout_rate到0.1-0.2
+- 大模型需要更多正则化
+
+### 4. mHC参数（使用mHC时）
+
+| 参数 | 范围 | 影响 | 推荐起始值 |
+|------|------|------|-----------|
+| `--mhc_expansion_rate` | 2-8 | 流形扩展因子 | 4（基准） |
+| `--mhc_sinkhorn_iter` | 10-50 | Sinkhorn迭代次数 | 20（基准） |
+| `--mhc_init_gate` | 0.001-0.1 | 门控初始值 | 0.01（基准） |
+
+**调参策略**：
+- 显存充足 → 增加`expansion_rate`到6-8
+- 需要更高精度 → 增加`sinkhorn_iter`到30-50
+- 训练不稳定 → 减小`init_gate`到0.005
+
+### 5. TiSASRec参数（使用时序特征时）
+
+| 参数 | 范围 | 影响 | 推荐起始值 |
+|------|------|------|-----------|
+| `--time_span` | 50-500 | 时间间隔离散化范围 | 100（基准） |
+| `--time_unit` | second/minute/hour/day | 时间单位 | hour（基准） |
+
+**调参策略**：
+- 密集交互（间隔短）：增加`time_span`到200-500
+- 稀疏交互（间隔长）：减小`time_span`到50-100
+
+### 6. 学习率调度参数
+
+| 参数 | 影响 | 推荐值 |
+|------|------|--------|
+| `--lr_decay_step` | 衰减频率（轮数） | 1000（基准） |
+| `--lr_decay_rate` | 每步衰减因子 | 0.95（基准） |
+
+**替代调度器**：
 ```bash
-# 中等模型
-python main.py --dataset=ml-1m --train_dir=sasrec_medium \
-    --hidden_units=128 --num_blocks=3 --batch_size=128
-
-# 大模型
-python main.py --dataset=ml-1m --train_dir=sasrec_large \
-    --hidden_units=256 --num_blocks=3 --batch_size=128
+# 阶梯衰减（激进）
+python main.py --dataset=ml-1m --train_dir=xxx \
+    --lr_decay_step=200 --lr_decay_rate=0.9
 ```
 
-如果loss卡在0.45左右：
-- 增加模型容量（`--hidden_units`、`--num_blocks`）
-- 使用学习率衰减（`--lr_decay_step=500 --lr_decay_rate=0.95`）
-- 添加warmup（`--warmup_steps=100`）
+### 7. 常见问题与解决方案
+
+| 症状 | 可能原因 | 解决方案 |
+|------|----------|----------|
+| Loss NaN | 学习率过高 | 减小 `--lr` 到 0.0005 |
+| Loss震荡 | 批次太小 | 增加 `--batch_size` |
+| Loss卡住 >0.5 | 学习率过低 | 增加 `--lr` 到 0.002 |
+| 过拟合（验证集↓） | 容量过大 | 增加 `--dropout_rate` |
+| 欠拟合（两者都↓） | 容量过小 | 增加 `--hidden_units` |
+| GPU显存不足 | 模型过大 | 使用 `--mhc_no_amp`，减小 `--batch_size` |
+| 收敛慢 | LR衰减太快 | 增加 `--lr_decay_step` |
+
+### 8. 推荐调参流程
+
+**第一阶段：基准验证（1-2小时）**
+```bash
+# 默认设置，验证训练正常
+python main.py --dataset=ml-1m --train_dir=baseline_test
+```
+
+**第二阶段：容量搜索（4-8小时）**
+```bash
+# 测试不同模型大小
+python main.py --dataset=ml-1m --train_dir=model_50  --hidden_units=50
+python main.py --dataset=ml-1m --train_dir=model_128 --hidden_units=128 --num_blocks=3
+python main.py --dataset=ml-1m --train_dir=model_256 --hidden_units=256 --num_blocks=3
+```
+
+**第三阶段：学习率微调（2-4小时）**
+```bash
+# 测试不同学习率
+python main.py --dataset=ml-1m --train_dir=lr_0005 --lr=0.0005
+python main.py --dataset=ml-1m --train_dir=lr_002  --lr=0.002
+```
+
+**第四阶段：正则化调优（2-4小时）**
+```bash
+# 如果观察到过拟合
+python main.py --dataset=ml-1m --train_dir=dropout_03 --dropout_rate=0.3
+python main.py --dataset=ml-1m --train_dir=dropout_04 --dropout_rate=0.4
+```
+
+### 9. 快速参考
+
+| 目标 | 命令 |
+|------|------|
+| 基准对比 | `--no_time --no_mhc` |
+| 仅时序感知 | `--no_mhc` |
+| 时序+mHC（默认） | （无参数） |
+| 高容量 | `--hidden_units=128 --num_blocks=3` |
+| 更高容量 | `--hidden_units=256 --num_blocks=3` |
+| 低显存 | `--batch_size=32 --mhc_no_amp` |
+| 快速探索 | `--num_epochs=200` |
 
 ## 显存不足
 
@@ -127,13 +245,6 @@ SASRec.pytorch/
 ├── docs/
 └── README.md
 ```
-
-## mHC参数调优
-
-| 参数 | 默认值 | 建议 |
-|------|--------|------|
-| `--mhc_expansion_rate` | 4 | 显存充足可用8 |
-| `--mhc_sinkhorn_iter` | 20 | 精度优先用50 |
 
 ## 引用
 
