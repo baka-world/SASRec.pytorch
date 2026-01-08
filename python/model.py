@@ -572,18 +572,24 @@ class SASRec(torch.nn.Module):
             if self.norm_first:
                 # Pre-LN结构：先LayerNorm，再注意力，再残差连接
                 x = self.attention_layernorms[i](seqs)
-                mha_outputs, _ = self.attention_layers[i](
-                    x, x, x, attn_mask=attention_mask
+                attn_layer = self.attention_layers[i]
+                x_attn = x.transpose(0, 1)
+                mha_outputs_T, _ = attn_layer(
+                    x_attn, x_attn, x_attn, attn_mask=attention_mask
                 )
+                mha_outputs = mha_outputs_T.transpose(0, 1)
                 seqs = seqs + mha_outputs
 
                 seqs = torch.transpose(seqs, 0, 1)
                 seqs = seqs + self.forward_layers[i](self.forward_layernorms[i](seqs))
             else:
                 # Post-LN结构：先注意力，再LayerNorm，再残差连接
-                mha_outputs, _ = self.attention_layers[i](
-                    seqs, seqs, seqs, attn_mask=attention_mask
+                attn_layer = self.attention_layers[i]
+                seqs_attn = seqs.transpose(0, 1)
+                mha_outputs_T, _ = attn_layer(
+                    seqs_attn, seqs_attn, seqs_attn, attn_mask=attention_mask
                 )
+                mha_outputs = mha_outputs_T.transpose(0, 1)
                 seqs = self.attention_layernorms[i](seqs + mha_outputs)
                 seqs = torch.transpose(seqs, 0, 1)
                 seqs = self.forward_layernorms[i](seqs + self.forward_layers[i](seqs))
