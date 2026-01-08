@@ -554,6 +554,11 @@ class SASRec(torch.nn.Module):
 
                 if self.use_mhc:
                     seqs = self.mhc_attn[i](seqs, seqs_after_attn)
+                    if torch.isnan(seqs).any():
+                        print(f"DEBUG: NaN after mhc_attn[{i}]")
+                        import sys
+
+                        sys.exit(1)
                 else:
                     seqs = seqs_after_attn
 
@@ -564,6 +569,11 @@ class SASRec(torch.nn.Module):
 
                 if self.use_mhc:
                     seqs = self.mhc_ffn[i](seqs, seqs_after_ffn)
+                    if torch.isnan(seqs).any():
+                        print(f"DEBUG: NaN after mhc_ffn[{i}]")
+                        import sys
+
+                        sys.exit(1)
                 else:
                     seqs = seqs_after_ffn
             else:
@@ -581,6 +591,11 @@ class SASRec(torch.nn.Module):
 
                 if self.use_mhc:
                     seqs = self.mhc_attn[i](seqs, seqs_after_attn)
+                    if torch.isnan(seqs).any():
+                        print(f"DEBUG: NaN after mhc_attn[{i}] (else branch)")
+                        import sys
+
+                        sys.exit(1)
                 else:
                     seqs = seqs_after_attn
 
@@ -591,6 +606,11 @@ class SASRec(torch.nn.Module):
 
                 if self.use_mhc:
                     seqs = self.mhc_ffn[i](seqs, seqs_after_ffn)
+                    if torch.isnan(seqs).any():
+                        print(f"DEBUG: NaN after mhc_ffn[{i}] (else branch)")
+                        import sys
+
+                        sys.exit(1)
                 else:
                     seqs = seqs_after_ffn
 
