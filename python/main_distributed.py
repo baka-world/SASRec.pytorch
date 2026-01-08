@@ -314,7 +314,8 @@ if __name__ == "__main__":
     t0 = time.time()
     total_step = 0
 
-    for epoch in range(epoch_start_idx, args.num_epochs + 1):
+    try:
+        for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only:
             break
 
@@ -411,10 +412,16 @@ if __name__ == "__main__":
             t0 = time.time()
             model.train()
 
+    finally:
+        if sampler is not None:
+            try:
+                sampler.close()
+            except:
+                pass
+        cleanup_distributed()
+
     if is_main_process():
         log_file.close()
-    sampler.close()
-    cleanup_distributed()
 
     if is_main_process():
         print("训练完成!")
