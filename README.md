@@ -20,17 +20,15 @@ cd data && wget http://files.grouplens.org/datasets/movielens/ml-1m.zip
 unzip ml-1m.zip && cd ..
 python convert_ml1m.py
 
-# Train SASRec (baseline)
+# Single GPU Training
 python main.py --dataset=ml-1m --train_dir=sasrec_base --no_time --no_mhc
-
-# Train SASRec + mHC
 python main.py --dataset=ml-1m --train_dir=sasrec_mhc --no_time
-
-# Train TiSASRec (default, uses time intervals)
 python main.py --dataset=ml-1m --train_dir=tisasrec
-
-# Train TiSASRec + mHC (default, time-aware with hyper-connections)
 python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
+
+# Multi-GPU Training (4x V100 example)
+python -m torch.distributed.launch --nproc_per_node=4 main_distributed.py \
+    --dataset=ml-1m --train_dir=tisasrec_dist --batch_size=512 --use_amp
 ```
 
 ## Arguments
@@ -58,6 +56,93 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
 | `--time_span` | 100 | Time interval range |
 | `--time_unit` | hour | Time unit (second/minute/hour/day) |
 | `--norm_first` | False | Use Pre-LN (True) or Post-LN (False) structure |
+| `--multi_gpu` | False | Enable distributed training |
+| `--num_workers` | 3 | Data loader threads |
+
+## Multi-GPU Training
+
+This implementation supports distributed training across multiple GPUs using PyTorch's DistributedDataParallel (DDP).
+
+### Requirements
+
+- PyTorch 1.9+
+- CUDA 11.0+
+- Multiple GPUs (tested with 4x V100 32GB)
+
+### Training Commands
+
+```bash
+# 4 GPU training (recommended for 4x V100)
+python -m torch.distributed.launch --nproc_per_node=4 \
+    main_distributed.py \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_4gpu \
+    --batch_size=512 \
+    --use_amp \
+    --multi_gpu
+
+# 2 GPU training
+python -m torch.distributed.launch --nproc_per_node=2 \
+    main_distributed.py \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_2gpu \
+    --batch_size=256 \
+    --use_amp \
+    --multi_gpu
+
+# Using torchrun (PyTorch 2.0+)
+torchrun --nproc_per_node=4 main_distributed.py \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_torchrun \
+    --batch_size=512 \
+    --use_amp \
+    --multi_gpu
+```
+
+### Using the Launch Script
+
+```bash
+# All 4 GPUs
+cd python && ./train_distributed.sh ml-1m tisasrec_dist
+
+# Specific GPU count
+NUM_GPUS=2 ./train_distributed.sh ml-1m tisasrec_2gpu
+```
+
+### Multi-GPU Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--multi_gpu` | False | Enable distributed training |
+| `--backend` | nccl | Communication backend (nccl/gloo) |
+| `--master_port` | 29500 | Master port for communication |
+| `--batch_size` | 128 | Total batch size (auto-split) |
+| `--use_amp` | True | Enable automatic mixed precision |
+
+### Performance Tips
+
+| Setting | Single GPU | 4x GPU |
+|---------|------------|--------|
+| batch_size | 128 | 512 |
+| lr | 0.001 | 0.002 |
+| Expected speedup | 1x | ~3.5x |
+
+### Verification
+
+```bash
+# Test distributed environment
+python test_distributed.py
+```
+
+### Expected Acceleration
+
+| Configuration | Relative Speedup |
+|---------------|------------------|
+| 1x V100 | 1.0x (baseline) |
+| 2x V100 | ~1.8x |
+| 4x V100 | ~3.5x |
+
+Note: Actual speedup depends on data loading efficiency and model architecture.
 
 ## LayerNorm Strategy
 
@@ -262,6 +347,7 @@ If CUDA out of memory:
 | 8 GB | `--batch_size 32 --hidden_units 50 --maxlen 100 --mhc_no_amp` |
 | 16 GB | `--batch_size 64 --hidden_units 50` (default config) |
 | 24+ GB | `--batch_size 128 --hidden_units 128` |
+| 4x V100 32GB | `--batch_size 512 --use_amp --multi_gpu` |
 
 Other options:
 - Reduce batch_size: `--batch_size=64`
@@ -269,17 +355,22 @@ Other options:
 - Reduce model size: `--num_blocks=1`
 - Disable mHC AMP: `--mhc_no_amp`
 - Use CPU: `--device=cpu`
+- Enable multi-GPU for larger effective batch size: `--multi_gpu`
 
 ## File Structure
 
 ```
 SASRec.pytorch/
 ├── python/
-│   ├── main.py         # Unified training script
-│   ├── model.py        # SASRec/TiSASRec
-│   ├── model_mhc.py    # SASRec/TiSASRec + mHC
-│   ├── utils.py        # Utilities
-│   └── convert_ml1m.py # Data converter
+│   ├── main.py              # Unified training script (single GPU)
+│   ├── main_distributed.py  # Distributed training script (multi-GPU)
+│   ├── model.py             # SASRec/TiSASRec
+│   ├── model_mhc.py         # SASRec/TiSASRec + mHC
+│   ├── utils.py             # Utilities
+│   ├── convert_ml1m.py      # Data converter
+│   ├── train_distributed.sh # Multi-GPU launch script
+│   ├── test_distributed.py  # Distributed environment test
+│   └── DISTRIBUTED_TRAINING.md # Multi-GPU training guide
 ├── data/
 ├── docs/
 └── README.md
