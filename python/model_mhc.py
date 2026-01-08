@@ -432,6 +432,7 @@ class TiSASRec(torch.nn.Module):
         self.use_mhc = getattr(args, "use_mhc", False)
         self.mhc_expansion_rate = getattr(args, "mhc_expansion_rate", 4)
         self.mhc_no_amp = getattr(args, "mhc_no_amp", False)
+        self.norm_first = getattr(args, "norm_first", False)
 
         self.item_emb = torch.nn.Embedding(
             self.item_num + 1, args.hidden_units, padding_idx=0
@@ -524,31 +525,62 @@ class TiSASRec(torch.nn.Module):
         )
 
         for i in range(len(self.attention_layers)):
-            Q = self.attention_layernorms[i](seqs)
+            if self.norm_first:
+                # Pre-LN结构：先LayerNorm，再注意力，再残差连接
+                Q = self.attention_layernorms[i](seqs)
 
-            mha_outputs = self.attention_layers[i](
-                Q,
-                seqs,
-                timeline_mask,
-                attention_mask,
-                time_matrix_K,
-                time_matrix_V,
-                abs_pos_K,
-                abs_pos_V,
-            )
+                mha_outputs = self.attention_layers[i](
+                    Q,
+                    seqs,
+                    timeline_mask,
+                    attention_mask,
+                    time_matrix_K,
+                    time_matrix_V,
+                    abs_pos_K,
+                    abs_pos_V,
+                )
 
-            if self.use_mhc:
-                seqs = self.mhc_attn[i](seqs, mha_outputs)
+                if self.use_mhc:
+                    seqs = self.mhc_attn[i](seqs, mha_outputs)
+                else:
+                    seqs = Q + mha_outputs
+
+                seqs = self.forward_layernorms[i](seqs)
+                ffn_output = self.forward_layers[i](seqs)
+
+                if self.use_mhc:
+                    seqs = self.mhc_ffn[i](seqs, ffn_output)
+                else:
+                    seqs = seqs + ffn_output
             else:
-                seqs = Q + mha_outputs
+                # Post-LN结构：先注意力，再LayerNorm，再残差连接
+                # 使用seqs作为Q，K，V（不经过LayerNorm）
+                mha_outputs = self.attention_layers[i](
+                    seqs,
+                    seqs,
+                    timeline_mask,
+                    attention_mask,
+                    time_matrix_K,
+                    time_matrix_V,
+                    abs_pos_K,
+                    abs_pos_V,
+                )
 
-            seqs = self.forward_layernorms[i](seqs)
-            ffn_output = self.forward_layers[i](seqs)
+                # 残差连接后应用LayerNorm
+                if self.use_mhc:
+                    seqs = self.mhc_attn[i](seqs, mha_outputs)
+                    seqs = self.attention_layernorms[i](seqs)
+                else:
+                    seqs = self.attention_layernorms[i](seqs + mha_outputs)
 
-            if self.use_mhc:
-                seqs = self.mhc_ffn[i](seqs, ffn_output)
-            else:
-                seqs = seqs + ffn_output
+                ffn_output = self.forward_layers[i](seqs)
+
+                # 残差连接后应用LayerNorm
+                if self.use_mhc:
+                    seqs = self.mhc_ffn[i](seqs, ffn_output)
+                    seqs = self.forward_layernorms[i](seqs)
+                else:
+                    seqs = self.forward_layernorms[i](seqs + ffn_output)
 
             seqs *= ~timeline_mask.unsqueeze(-1)
 

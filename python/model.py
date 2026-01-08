@@ -292,6 +292,7 @@ class TiSASRec(torch.nn.Module):
         self.item_num = item_num
         self.time_span = time_span
         self.dev = args.device
+        self.norm_first = getattr(args, "norm_first", False)
 
         # 物品嵌入层
         self.item_emb = torch.nn.Embedding(
@@ -397,27 +398,49 @@ class TiSASRec(torch.nn.Module):
 
         # 依次通过每个时序感知Transformer编码器块
         for i in range(len(self.attention_layers)):
-            # Q = LayerNorm(seqs)
-            Q = self.attention_layernorms[i](seqs)
+            if self.norm_first:
+                # Pre-LN结构：先LayerNorm，再注意力，再残差连接
+                Q = self.attention_layernorms[i](seqs)
 
-            # 时序感知自注意力计算（核心创新）
-            mha_outputs = self.attention_layers[i](
-                Q,
-                seqs,
-                timeline_mask,
-                attention_mask,
-                time_matrix_K,
-                time_matrix_V,
-                abs_pos_K,
-                abs_pos_V,
-            )
+                # 时序感知自注意力计算
+                mha_outputs = self.attention_layers[i](
+                    Q,
+                    seqs,
+                    timeline_mask,
+                    attention_mask,
+                    time_matrix_K,
+                    time_matrix_V,
+                    abs_pos_K,
+                    abs_pos_V,
+                )
 
-            # 残差连接
-            seqs = Q + mha_outputs
+                # 残差连接
+                seqs = Q + mha_outputs
 
-            # 点式前馈网络
-            seqs = self.forward_layernorms[i](seqs)
-            seqs = self.forward_layers[i](seqs)
+                # FFN部分
+                seqs = self.forward_layernorms[i](seqs)
+                seqs = self.forward_layers[i](seqs)
+            else:
+                # Post-LN结构：先注意力，再LayerNorm，再残差连接
+                # 使用seqs作为Q，K，V（不经过LayerNorm）
+                mha_outputs = self.attention_layers[i](
+                    seqs,
+                    seqs,
+                    timeline_mask,
+                    attention_mask,
+                    time_matrix_K,
+                    time_matrix_V,
+                    abs_pos_K,
+                    abs_pos_V,
+                )
+
+                # 残差连接后应用LayerNorm
+                seqs = self.attention_layernorms[i](seqs + mha_outputs)
+
+                # FFN部分
+                ffn_output = self.forward_layers[i](seqs)
+                seqs = self.forward_layernorms[i](seqs + ffn_output)
+
             seqs *= ~timeline_mask.unsqueeze(-1)
 
         # 最终LayerNorm归一化

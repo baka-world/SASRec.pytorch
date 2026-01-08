@@ -57,10 +57,46 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
 | `--mhc_sinkhorn_iter` | 20 | Sinkhorn iterations |
 | `--time_span` | 100 | Time interval range |
 | `--time_unit` | hour | Time unit (second/minute/hour/day) |
+| `--norm_first` | False | Use Pre-LN (True) or Post-LN (False) structure |
+
+## LayerNorm Strategy
+
+This implementation supports two LayerNorm strategies for the Transformer encoder blocks, following the discussion in [Issue #47](https://github.com/pmixer/SASRec.pytorch/issues/47):
+
+### Pre-LN (`--norm_first`)
+```
+x = x + Dropout(Attention(LN(x)))
+x = x + Dropout(FFN(LN(x)))
+```
+LayerNorm is applied **before** the sub-layer, matching the original Transformer paper description. This structure is more stable for very deep networks but may have limited expressive power.
+
+### Post-LN (default, `--norm_first=False`)
+```
+x = LN(x + Dropout(Attention(x)))
+x = LN(x + Dropout(FFN(x)))
+```
+LayerNorm is applied **after** the residual connection. Based on experimental results from Issue #47, Post-LN generally performs better for SASRec/TiSASRec with a small number of blocks (<=3), which is the typical setting for sequential recommendation.
+
+### Recommendations
+
+| Setting | Recommended Strategy |
+|---------|---------------------|
+| num_blocks <= 3 | Post-LN (default) |
+| num_blocks > 3 | Post-LN or Pre-LN (both work) |
+| Training instability | Try Pre-LN |
+| Best performance | Post-LN (default) |
+
+### Usage
+
+```bash
+# Use Post-LN (default, recommended)
+python main.py --dataset=ml-1m --train_dir=post_ln_test
+
+# Use Pre-LN (original paper structure)
+python main.py --dataset=ml-1m --train_dir=pre_ln_test --norm_first
+```
 
 ## Experimental Settings (Baseline Comparison)
-
-Default parameters match the original SASRec paper for fair comparison:
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
