@@ -663,12 +663,17 @@ class SASRec(torch.nn.Module):
                     torch.ones((seq_len, seq_len), dtype=torch.bool, device=self.dev)
                 )
 
-                mha_outputs, _ = self.attention_layers[i](
+                attn_layer = self.attention_layers[i]
+                mha_outputs, attn_weights = attn_layer(
                     seqs_T, seqs_T, seqs_T, attn_mask=attention_mask
                 )
 
                 if torch.isnan(mha_outputs).any():
                     print(f"DEBUG: NaN in mha_outputs at block {i} (else branch)")
+                    print(f"  seqs_T has NaN: {torch.isnan(seqs_T).any().item()}")
+                    print(
+                        f"  attn_weights has NaN: {torch.isnan(attn_weights).any().item()}"
+                    )
                     import sys
 
                     sys.exit(1)
