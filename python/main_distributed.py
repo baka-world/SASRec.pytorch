@@ -1,30 +1,21 @@
+#!/usr/bin/env python
 """
-SASRec Benchmark: Unified Training Script for All Model Variants
-
-支持以下模式：
-1. SASRec (基准)
-2. SASRec + mHC
-3. TiSASRec (默认，使用时序感知机制)
-4. TiSASRec + mHC
+SASRec Distributed Training Script
 
 使用方法：
-    # SASRec基准
-    python main.py --dataset=ml-1m --train_dir=sasrec_base --no_time --no_mhc
+    # 4卡训练
+    python -m torch.distributed.launch --nproc_per_node=4 main_distributed.py --dataset=ml-1m --train_dir=tisasrec_dist
 
-    # SASRec + mHC
-    python main.py --dataset=ml-1m --train_dir=sasrec_mhc --no_time
+    # 2卡训练
+    python -m torch.distributed.launch --nproc_per_node=2 main_distributed.py --dataset=ml-1m --train_dir=tisasrec_dist
 
-    # TiSASRec (默认)
-    python main.py --dataset=ml-1m --train_dir=tisasrec
-
-    # TiSASRec + mHC
-    python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
-
-    # 多卡训练 (4卡)
-    python -m torch.distributed.launch --nproc_per_node=4 main.py --dataset=ml-1m --train_dir=tisasrec_dist --multi_gpu
-
-    # 多卡训练 (指定GPU数量)
-    python -m torch.distributed.launch --nproc_per_node=2 main.py --dataset=ml-1m --train_dir=tisasrec_dist --multi_gpu
+    # 自定义GPU数量和参数
+    python -m torch.distributed.launch --nproc_per_node=4 main_distributed.py \
+        --dataset=ml-1m \
+        --train_dir=tisasrec_dist \
+        --batch_size=256 \
+        --num_epochs=200 \
+        --lr=0.001
 """
 
 import os
@@ -48,9 +39,9 @@ from utils import *
 
 
 def str2bool(s):
-    if s not in {"false", "true"}:
-        raise ValueError("Not a valid boolean string")
-    return s == "true"
+    if s.lower() in {"false", "true"}:
+        return s.lower() == "true"
+    raise ValueError("Not a valid boolean string")
 
 
 def get_lr(step, args):
@@ -73,8 +64,7 @@ def setup_distributed(args):
             args.world_size = int(os.environ["SLURM_NTASKS"])
             args.rank = int(os.environ["SLURM_PROCID"])
         else:
-            if not hasattr(args, "local_rank"):
-                args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+            args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
             args.rank = int(os.environ.get("RANK", 0))
             args.world_size = int(
                 os.environ.get("WORLD_SIZE", torch.cuda.device_count())
@@ -88,10 +78,13 @@ def setup_distributed(args):
             rank=args.rank,
         )
 
-        print(f"[GPU {args.rank}] 分布式训练初始化完成 | 世界大小: {args.world_size}")
+        if is_main_process():
+            print(
+                f"分布式训练初始化完成 | GPU数量: {args.world_size} | 主节点端口: {args.master_port}"
+            )
 
-        args.batch_size = args.batch_size // args.world_size
-        args.num_workers = max(1, (args.num_workers // args.world_size))
+        args.batch_size = max(1, args.batch_size // args.world_size)
+        args.num_workers = max(1, args.num_workers // args.world_size)
 
 
 def cleanup_distributed():
@@ -99,116 +92,53 @@ def cleanup_distributed():
         dist.destroy_process_group()
 
 
-parser = argparse.ArgumentParser(description="SASRec Benchmark Training")
+parser = argparse.ArgumentParser(description="SASRec Distributed Training")
 
 parser.add_argument("--dataset", required=True, help="数据集名称")
 parser.add_argument("--train_dir", required=True, help="训练结果保存的目录名")
-parser.add_argument(
-    "--batch_size", default=128, type=int, help="每个训练批次的样本数量"
-)
+parser.add_argument("--batch_size", default=128, type=int, help="总batch大小")
 parser.add_argument("--lr", default=0.001, type=float, help="学习率")
-parser.add_argument(
-    "--lr_decay_step", default=1000, type=int, help="学习率衰减步长（按epoch）"
-)
+parser.add_argument("--lr_decay_step", default=1000, type=int, help="学习率衰减步长")
 parser.add_argument("--lr_decay_rate", default=0.95, type=float, help="学习率衰减率")
-parser.add_argument(
-    "--warmup_steps", default=100, type=int, help="Warmup步数（0表示不使用warmup）"
-)
+parser.add_argument("--warmup_steps", default=100, type=int, help="Warmup步数")
 parser.add_argument("--maxlen", default=200, type=int, help="序列的最大长度")
 parser.add_argument("--hidden_units", default=50, type=int, help="隐藏层维度")
-parser.add_argument(
-    "--num_blocks", default=2, type=int, help="Transformer编码器块的数量"
-)
+parser.add_argument("--num_blocks", default=2, type=int, help="Transformer编码器块数量")
 parser.add_argument("--num_epochs", default=1000, type=int, help="训练轮数")
-parser.add_argument(
-    "--num_heads", default=2, type=int, help="多头注意力机制中注意力头的数量"
-)
+parser.add_argument("--num_heads", default=2, type=int, help="多头注意力头数")
 parser.add_argument("--dropout_rate", default=0.2, type=float, help="Dropout比率")
-parser.add_argument("--l2_emb", default=0.0, type=float, help="嵌入层的L2正则化系数")
-parser.add_argument("--device", default="cuda", type=str, help="训练设备")
+parser.add_argument("--l2_emb", default=0.0, type=float, help="嵌入层L2正则化")
+parser.add_argument("--inference_only", default=False, type=str2bool, help="仅推理")
+parser.add_argument("--state_dict_path", default=None, type=str, help="预训练模型路径")
 parser.add_argument(
-    "--inference_only", default=False, type=str2bool, help="是否仅进行推理"
+    "--norm_first", action="store_true", default=False, help="Pre-LN结构"
+)
+parser.add_argument("--num_workers", default=3, type=int, help="数据加载线程数")
+parser.add_argument(
+    "--no_time", action="store_true", default=False, help="禁用时序感知"
 )
 parser.add_argument(
-    "--state_dict_path", default=None, type=str, help="预训练模型权重文件的路径"
+    "--use_time", action="store_true", default=False, help="启用时序感知"
+)
+parser.add_argument("--no_mhc", action="store_true", default=False, help="禁用mHC模块")
+parser.add_argument("--mhc_expansion_rate", default=4, type=int, help="mHC扩展因子")
+parser.add_argument("--mhc_init_gate", default=0.01, type=float, help="mHC门控因子")
+parser.add_argument(
+    "--mhc_sinkhorn_iter", default=20, type=int, help="Sinkhorn迭代次数"
 )
 parser.add_argument(
-    "--norm_first",
-    action="store_true",
-    default=False,
-    help="是否在每个Block中先进行LayerNorm",
+    "--mhc_no_amp", action="store_true", default=False, help="mHC禁用AMP"
 )
-parser.add_argument("--num_workers", default=3, type=int, help="数据加载的线程数")
-
-parser.add_argument(
-    "--no_time",
-    action="store_true",
-    default=False,
-    help="禁用TiSASRec时序感知机制，使用标准SASRec",
-)
-parser.add_argument(
-    "--use_time",
-    action="store_true",
-    default=False,
-    help="启用TiSASRec时序感知机制（默认行为，可忽略）",
-)
-parser.add_argument(
-    "--no_mhc",
-    action="store_true",
-    default=False,
-    help="禁用mHC模块，使用标准模型",
-)
-
-parser.add_argument("--mhc_expansion_rate", default=4, type=int, help="mHC扩展因子n")
-parser.add_argument(
-    "--mhc_init_gate", default=0.01, type=float, help="mHC门控因子α初始值"
-)
-parser.add_argument(
-    "--mhc_sinkhorn_iter", default=20, type=int, help="mHC Sinkhorn-Knopp迭代次数"
-)
-
-parser.add_argument(
-    "--mhc_no_amp",
-    action="store_true",
-    default=False,
-    help="禁用mHC模块的AMP计算",
-)
-
-parser.add_argument(
-    "--use_amp",
-    action="store_true",
-    default=True,
-    help="启用自动混合精度训练（节省显存）",
-)
-
+parser.add_argument("--use_amp", action="store_true", default=True, help="启用AMP")
 parser.add_argument("--time_span", default=100, type=int, help="时间间分离散化范围")
 parser.add_argument(
-    "--time_unit",
-    default="hour",
-    type=str,
-    choices=["second", "minute", "hour", "day"],
-    help="时间单位",
-)
-
-parser.add_argument(
-    "--multi_gpu",
-    action="store_true",
-    default=False,
-    help="启用多卡分布式训练",
+    "--time_unit", default="hour", type=str, choices=["second", "minute", "hour", "day"]
 )
 parser.add_argument(
-    "--backend",
-    type=str,
-    default="nccl",
-    choices=["nccl", "gloo"],
-    help="分布式训练通信后端",
+    "--multi_gpu", action="store_true", default=False, help="启用多卡训练"
 )
-parser.add_argument(
-    "--master_port",
-    type=int,
-    default=29500,
-    help="主节点端口号",
-)
+parser.add_argument("--backend", type=str, default="nccl", choices=["nccl", "gloo"])
+parser.add_argument("--master_port", type=int, default=29500, help="主节点端口")
 
 args = parser.parse_args()
 
@@ -274,6 +204,7 @@ if __name__ == "__main__":
     setup_distributed(args)
 
     sampler = None
+    log_file = None
 
     def cleanup(signum, frame):
         if is_main_process():
@@ -286,9 +217,11 @@ if __name__ == "__main__":
         gc.collect()
         torch.cuda.empty_cache()
         cleanup_distributed()
+        if is_main_process() and log_file is not None:
+            log_file.close()
         if is_main_process():
             print("完成，退出。")
-        exit(0)
+        sys.exit(0)
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
@@ -299,15 +232,7 @@ if __name__ == "__main__":
 
     if is_main_process():
         with open(os.path.join(output_dir, "args.txt"), "w") as f:
-            f.write(
-                "\n".join(
-                    [
-                        str(k) + "," + str(v)
-                        for k, v in sorted(vars(args).items(), key=lambda x: x[0])
-                    ]
-                )
-            )
-        f.close()
+            f.write("\n".join([f"{k},{v}" for k, v in sorted(vars(args).items())]))
 
     u2i_index, i2u_index = build_index(args.dataset)
     dataset = data_partition(args.dataset)
@@ -315,15 +240,13 @@ if __name__ == "__main__":
 
     num_batch = (len(user_train) - 1) // args.batch_size + 1
 
-    cc = 0.0
-    for u in user_train:
-        cc += len(user_train[u])
+    cc = sum(len(user_train[u]) for u in user_train)
     if is_main_process():
-        print("average sequence length: %.2f" % (cc / len(user_train)))
+        print(f"Average sequence length: {cc / len(user_train):.2f}")
 
     if is_main_process():
-        f = open(os.path.join(output_dir, "log.txt"), "w")
-        f.write("epoch (val_ndcg, val_hr) (test_ndcg, test_hr)\n")
+        log_file = open(os.path.join(output_dir, "log.txt"), "w")
+        log_file.write("epoch (val_ndcg, val_hr) (test_ndcg, test_hr)\n")
 
     time_span = args.time_span if args.use_time or not args.no_time else 0
     sampler = get_sampler(user_train, usernum, itemnum, time_span)
@@ -355,19 +278,15 @@ if __name__ == "__main__":
     epoch_start_idx = 1
     if args.state_dict_path is not None:
         try:
-            model.load_state_dict(
-                torch.load(
-                    args.state_dict_path, map_location=torch.device(args.local_rank)
-                )
+            state_dict = torch.load(
+                args.state_dict_path, map_location=torch.device(args.local_rank)
             )
-            tail = args.state_dict_path[args.state_dict_path.find("epoch=") + 6 :]
-            epoch_start_idx = int(tail[: tail.find(".")]) + 1
-        except:
+            model.load_state_dict(state_dict)
             if is_main_process():
-                print(
-                    "failed loading state_dicts, pls check file path:",
-                    args.state_dict_path,
-                )
+                print(f"成功加载预训练模型: {args.state_dict_path}")
+        except Exception as e:
+            if is_main_process():
+                print(f"加载预训练模型失败: {e}")
 
     if args.inference_only:
         model.eval()
@@ -376,7 +295,7 @@ if __name__ == "__main__":
         else:
             t_test = evaluate(model, dataset, args)
         if is_main_process():
-            print("test (NDCG@10: %.4f, HR@10: %.4f)" % (t_test[0], t_test[1]))
+            print(f"测试结果 (NDCG@10: {t_test[0]:.4f}, HR@10: {t_test[1]:.4f})")
 
     bce_criterion = torch.nn.BCEWithLogitsLoss()
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
@@ -387,7 +306,6 @@ if __name__ == "__main__":
 
     T = 0.0
     t0 = time.time()
-
     total_step = 0
 
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
@@ -399,30 +317,26 @@ if __name__ == "__main__":
 
             if args.use_time or not args.no_time:
                 u, seq, pos, neg, time_mat = batch_data
-                u, seq, pos, neg, time_mat = (
-                    np.array(u),
-                    np.array(seq),
-                    np.array(pos),
-                    np.array(neg),
-                    np.array(time_mat),
-                )
+                u = torch.LongTensor(u).to(args.local_rank)
+                seq = torch.LongTensor(seq).to(args.local_rank)
+                pos = torch.LongTensor(pos).to(args.local_rank)
+                neg = torch.LongTensor(neg).to(args.local_rank)
+                time_mat = torch.LongTensor(time_mat).to(args.local_rank)
+
                 with amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
             else:
                 u, seq, pos, neg = batch_data
-                u, seq, pos, neg = (
-                    np.array(u),
-                    np.array(seq),
-                    np.array(pos),
-                    np.array(neg),
-                )
+                u = torch.LongTensor(u).to(args.local_rank)
+                seq = torch.LongTensor(seq).to(args.local_rank)
+                pos = torch.LongTensor(pos).to(args.local_rank)
+                neg = torch.LongTensor(neg).to(args.local_rank)
+
                 with amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, pos, neg)
 
-            pos_labels, neg_labels = (
-                torch.ones(pos_logits.shape, device=args.local_rank),
-                torch.zeros(neg_logits.shape, device=args.local_rank),
-            )
+            pos_labels = torch.ones(pos_logits.shape, device=args.local_rank)
+            neg_labels = torch.zeros(neg_logits.shape, device=args.local_rank)
 
             adam_optimizer.zero_grad()
 
@@ -447,14 +361,12 @@ if __name__ == "__main__":
 
             total_step += 1
 
-            if is_main_process():
+            if is_main_process() and step % 100 == 0:
                 print(
-                    "loss in epoch {} iteration {}: {:.4f} lr: {:.6f}".format(
-                        epoch, step, loss.item(), current_lr
-                    )
+                    f"Epoch {epoch} Step {step}: Loss={loss.item():.4f} LR={current_lr:.6f}"
                 )
 
-        if epoch % 20 == 0:
+        if epoch % 20 == 0 or epoch == args.num_epochs:
             model.eval()
             t1 = time.time() - t0
             T += t1
@@ -468,8 +380,8 @@ if __name__ == "__main__":
 
             if is_main_process():
                 print(
-                    " epoch:%d, time: %f(s), valid (NDCG@10: %.4f, HR@10: %.4f), test (NDCG@10: %.4f, HR@10: %.4f)"
-                    % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1])
+                    f"Epoch {epoch}: Time={T:.1f}s, Valid(NDCG={t_valid[0]:.4f}, HR={t_valid[1]:.4f}), "
+                    f"Test(NDCG={t_test[0]:.4f}, HR={t_test[1]:.4f})"
                 )
 
             if (
@@ -482,44 +394,23 @@ if __name__ == "__main__":
                 best_val_hr = max(t_valid[1], best_val_hr)
                 best_test_ndcg = max(t_test[0], best_test_ndcg)
                 best_test_hr = max(t_test[1], best_test_hr)
-                folder = output_dir
-                fname = "model.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.time={}.mhc={}.pth"
-                fname = fname.format(
-                    epoch,
-                    args.lr,
-                    args.num_blocks,
-                    args.num_heads,
-                    args.hidden_units,
-                    args.maxlen,
-                    args.use_time or not args.no_time,
-                    not args.no_mhc,
-                )
-                torch.save(model.state_dict(), os.path.join(folder, fname))
+
+                if is_main_process():
+                    fname = f"model.epoch={epoch}.lr={args.lr}.layer={args.num_blocks}.head={args.num_heads}.hidden={args.hidden_units}.pth"
+                    torch.save(model.state_dict(), os.path.join(output_dir, fname))
 
             if is_main_process():
-                f.write(str(epoch) + " " + str(t_valid) + " " + str(t_test) + "\n")
-                f.flush()
+                log_file.write(f"{epoch} {t_valid} {t_test}\n")
+                log_file.flush()
             t0 = time.time()
             model.train()
 
-        if epoch == args.num_epochs:
-            folder = output_dir
-            fname = "model.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.time={}.mhc={}.pth"
-            fname = fname.format(
-                args.num_epochs,
-                args.lr,
-                args.num_blocks,
-                args.num_heads,
-                args.hidden_units,
-                args.maxlen,
-                args.use_time or not args.no_time,
-                not args.no_mhc,
-            )
-            torch.save(model.state_dict(), os.path.join(folder, fname))
-
     if is_main_process():
-        f.close()
+        log_file.close()
     sampler.close()
     cleanup_distributed()
+
     if is_main_process():
-        print("Done")
+        print("训练完成!")
+        print(f"最佳验证指标: NDCG={best_val_ndcg:.4f}, HR={best_val_hr:.4f}")
+        print(f"最佳测试指标: NDCG={best_test_ndcg:.4f}, HR={best_test_hr:.4f}")
