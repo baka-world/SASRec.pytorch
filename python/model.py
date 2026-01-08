@@ -37,7 +37,19 @@ class NumericallyStableMultiheadAttention(torch.nn.Module):
         K = K.view(batch_size, seq_len, self.num_heads, self.head_size).transpose(1, 2)
         V = V.view(batch_size, seq_len, self.num_heads, self.head_size).transpose(1, 2)
 
+        if torch.isnan(Q).any() or torch.isnan(K).any() or torch.isnan(V).any():
+            print(f"DEBUG: NaN in Q, K, or V in attention layer")
+            import sys
+
+            sys.exit(1)
+
         attn_scores = torch.matmul(Q, K.transpose(2, 3)) / (self.head_size**0.5)
+
+        if torch.isnan(attn_scores).any():
+            print(f"DEBUG: NaN in attn_scores after matmul")
+            import sys
+
+            sys.exit(1)
 
         if attn_mask is not None:
             if attn_mask.dim() == 2:
@@ -58,7 +70,23 @@ class NumericallyStableMultiheadAttention(torch.nn.Module):
             if mask is not None:
                 attn_scores = attn_scores.masked_fill(mask, FLOAT_MIN)
 
+        if torch.isnan(attn_scores).any():
+            print(f"DEBUG: NaN in attn_scores after masked_fill")
+            import sys
+
+            sys.exit(1)
+
         attn_weights = torch.nn.functional.softmax(attn_scores, dim=-1)
+
+        if torch.isnan(attn_weights).any():
+            print(f"DEBUG: NaN in attn_weights after softmax")
+            print(
+                f"  attn_scores min: {attn_scores.min().item()}, max: {attn_scores.max().item()}"
+            )
+            import sys
+
+            sys.exit(1)
+
         attn_weights = self.dropout(attn_weights)
 
         outputs = torch.matmul(attn_weights, V)
