@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import sys
 
-FLOAT_MIN = -1e9
+FLOAT_MIN = -1e4
 
 
 class NumericallyStableMultiheadAttention(torch.nn.Module):
