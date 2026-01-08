@@ -516,7 +516,9 @@ class TiSASRec(torch.nn.Module):
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
         time_matrix_V = self.time_matrix_V_dropout(time_matrix_V)
 
-        timeline_mask = torch.as_tensor(log_seqs == 0, dtype=torch.bool, device=self.dev)
+        timeline_mask = torch.as_tensor(
+            log_seqs == 0, dtype=torch.bool, device=self.dev
+        )
         seqs *= ~timeline_mask.unsqueeze(-1)
 
         tl = seqs.shape[1]
@@ -688,7 +690,7 @@ class SASRec(torch.nn.Module):
 
         poss = torch.arange(1, log_seqs.shape[1] + 1, device=self.dev)
         poss = poss.unsqueeze(0).expand(log_seqs.shape[0], -1)
-        mask = (log_seqs != 0)
+        mask = torch.as_tensor(log_seqs != 0, device=self.dev)
         poss = poss * mask
         seqs += self.pos_emb(poss)
         seqs = self.emb_dropout(seqs)
