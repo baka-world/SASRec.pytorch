@@ -601,7 +601,28 @@ class SASRec(torch.nn.Module):
                     seqs = seqs_after_attn
 
                 seqs_T = torch.transpose(seqs, 0, 1)
-                ffn_output = self.forward_layers[i](self.forward_layernorms[i](seqs_T))
+
+                if torch.isnan(seqs_T).any():
+                    print(f"DEBUG: NaN in seqs_T before FFN at block {i}")
+                    import sys
+
+                    sys.exit(1)
+
+                ffn_input = self.forward_layernorms[i](seqs_T)
+                if torch.isnan(ffn_input).any():
+                    print(f"DEBUG: NaN in ffn_input (layernorm output) at block {i}")
+                    import sys
+
+                    sys.exit(1)
+
+                ffn_output = self.forward_layers[i](ffn_input)
+
+                if torch.isnan(ffn_output).any():
+                    print(f"DEBUG: NaN in ffn_output at block {i}")
+                    import sys
+
+                    sys.exit(1)
+
                 seqs_T = seqs_T + ffn_output
                 seqs_after_ffn = torch.transpose(seqs_T, 0, 1)
 
@@ -616,6 +637,14 @@ class SASRec(torch.nn.Module):
                     seqs = seqs_after_ffn
             else:
                 seqs_T = torch.transpose(seqs, 0, 1)
+
+                if torch.isnan(seqs_T).any():
+                    print(
+                        f"DEBUG: NaN in seqs_T before attention at block {i} (else branch)"
+                    )
+                    import sys
+
+                    sys.exit(1)
 
                 attention_mask = ~torch.tril(
                     torch.ones((seq_len, seq_len), dtype=torch.bool, device=self.dev)
