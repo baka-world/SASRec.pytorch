@@ -315,16 +315,31 @@ if __name__ == "__main__":
     t0 = time.time()
     total_step = 0
 
+    # 测试前向传播是否正常
+    if is_main_process():
+        print("[Debug] Testing forward pass...")
+    torch.distributed.barrier()
     try:
-        for epoch in range(epoch_start_idx, args.num_epochs + 1):
-            if args.inference_only:
-                break
+        test_input_u = torch.LongTensor([1]).to(args.local_rank)
+        test_input_seq = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
+        test_input_pos = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
+        test_input_neg = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
+        with torch.no_grad():
+            _ = model(test_input_u, test_input_seq, test_input_pos, test_input_neg)
+        torch.distributed.barrier()
+        if is_main_process():
+            print("[Debug] Forward pass test successful!")
+    except Exception as e:
+        if is_main_process():
+            print(f"[Debug] Forward pass test failed: {e}")
+        raise
+
+    for epoch in range(epoch_start_idx, args.num_epochs + 1):
+        if args.inference_only:
+            break
 
         for step in range(num_batch):
             batch_data = sampler.next_batch()
-
-            if step == 0 and is_main_process():
-                print(f"[Debug] Rank {args.local_rank}: First batch loaded")
 
             if args.use_time or not args.no_time:
                 u, seq, pos, neg, time_mat = batch_data
@@ -336,9 +351,6 @@ if __name__ == "__main__":
 
                 # with torch.amp.autocast("cuda"):  # 临时禁用 AMP
                 pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
-                if step == 0 and is_main_process():
-                    print(f"[Debug] Rank {args.local_rank}: Forward pass done")
-                torch.distributed.barrier()
             else:
                 u, seq, pos, neg = batch_data
                 u = torch.LongTensor(np.array(u)).to(args.local_rank)
@@ -348,9 +360,6 @@ if __name__ == "__main__":
 
                 # with torch.amp.autocast("cuda"):  # 临时禁用 AMP
                 pos_logits, neg_logits = model(u, seq, pos, neg)
-                if step == 0 and is_main_process():
-                    print(f"[Debug] Rank {args.local_rank}: Forward pass done")
-                torch.distributed.barrier()
 
             pos_labels = torch.ones(pos_logits.shape, device=args.local_rank)
             neg_labels = torch.zeros(neg_logits.shape, device=args.local_rank)
@@ -418,16 +427,10 @@ if __name__ == "__main__":
             t0 = time.time()
             model.train()
 
-    finally:
-        if sampler is not None:
-            try:
-                sampler.close()
-            except:
-                pass
-        cleanup_distributed()
-
     if is_main_process():
         log_file.close()
+    sampler.close()
+    cleanup_distributed()
 
     if is_main_process():
         print("训练完成!")
