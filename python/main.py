@@ -3,22 +3,22 @@ SASRec Benchmark: Unified Training Script for All Model Variants
 
 支持以下模式：
 1. SASRec (基准)
-2. SASRec + mHC (默认)
-3. TiSASRec (use_time)
-4. TiSASRec + mHC (默认)
+2. SASRec + mHC
+3. TiSASRec (默认，使用时序感知机制)
+4. TiSASRec + mHC
 
 使用方法：
     # SASRec基准
-    python main.py --dataset=ml-1m --train_dir=sasrec_base --no_mhc
+    python main.py --dataset=ml-1m --train_dir=sasrec_base --no_time --no_mhc
 
-    # SASRec + mHC (默认)
-    python main.py --dataset=ml-1m --train_dir=sasrec_mhc
+    # SASRec + mHC
+    python main.py --dataset=ml-1m --train_dir=sasrec_mhc --no_time
 
-    # TiSASRec
-    python main.py --dataset=ml-1m --train_dir=tisasrec --use_time --no_mhc
+    # TiSASRec (默认)
+    python main.py --dataset=ml-1m --train_dir=tisasrec
 
-    # TiSASRec + mHC (默认)
-    python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time
+    # TiSASRec + mHC
+    python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
 """
 
 import os
@@ -99,16 +99,10 @@ parser.add_argument(
 
 # 模型选择参数
 parser.add_argument(
-    "--use_time",
+    "--no_time",
     action="store_true",
     default=False,
-    help="启用TiSASRec（使用时序感知机制）",
-)
-parser.add_argument(
-    "--no_mhc",
-    action="store_true",
-    default=False,
-    help="禁用mHC（流形约束超连接），使用标准SASRec",
+    help="禁用TiSASRec时序感知机制，使用标准SASRec",
 )
 
 # mHC参数
@@ -151,7 +145,7 @@ args = parser.parse_args()
 
 def get_model(usernum, itemnum, time_span):
     """根据参数选择合适的模型"""
-    if args.use_time:
+    if args.use_time or not args.no_time:
         if not args.no_mhc:
             print(f"==> 使用 TiSASRec + mHC (expansion_rate={args.mhc_expansion_rate})")
             return TiSASRec_mHC(usernum, itemnum, time_span, args)
@@ -169,7 +163,7 @@ def get_model(usernum, itemnum, time_span):
 
 def get_sampler(user_train, usernum, itemnum, time_span):
     """根据参数选择合适的采样器"""
-    if args.use_time:
+    if args.use_time or not args.no_time:
         user_timestamps = get_user_timestamps(args.dataset, user_train)
         return WarpSamplerWithTime(
             user_train,
@@ -259,7 +253,7 @@ if __name__ == "__main__":
     f = open(os.path.join(args.dataset + "_" + args.train_dir, "log.txt"), "w")
     f.write("epoch (val_ndcg, val_hr) (test_ndcg, test_hr)\n")
 
-    time_span = args.time_span if args.use_time else 0
+    time_span = args.time_span if args.use_time or not args.no_time else 0
     sampler = get_sampler(user_train, usernum, itemnum, time_span)
 
     model = get_model(usernum, itemnum, time_span).to(args.device)
@@ -294,7 +288,7 @@ if __name__ == "__main__":
 
     if args.inference_only:
         model.eval()
-        if args.use_time:
+        if args.use_time or not args.no_time:
             t_test = evaluate_tisasrec(model, dataset, args)
         else:
             t_test = evaluate(model, dataset, args)
@@ -319,7 +313,7 @@ if __name__ == "__main__":
         for step in range(num_batch):
             batch_data = sampler.next_batch()
 
-            if args.use_time:
+            if args.use_time or not args.no_time:
                 u, seq, pos, neg, time_mat = batch_data
                 u, seq, pos, neg, time_mat = (
                     np.array(u),
@@ -410,7 +404,7 @@ if __name__ == "__main__":
             T += t1
             print("Evaluating", end="")
 
-            if args.use_time:
+            if args.use_time or not args.no_time:
                 t_test = evaluate_tisasrec(model, dataset, args)
                 t_valid = evaluate_valid_tisasrec(model, dataset, args)
             else:
@@ -441,7 +435,7 @@ if __name__ == "__main__":
                     args.num_heads,
                     args.hidden_units,
                     args.maxlen,
-                    args.use_time,
+                    args.use_time or not args.no_time,
                     args.use_mhc,
                 )
                 torch.save(model.state_dict(), os.path.join(folder, fname))
@@ -461,7 +455,7 @@ if __name__ == "__main__":
                 args.num_heads,
                 args.hidden_units,
                 args.maxlen,
-                args.use_time,
+                args.use_time or not args.no_time,
                 args.use_mhc,
             )
             torch.save(model.state_dict(), os.path.join(folder, fname))
