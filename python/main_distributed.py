@@ -142,7 +142,10 @@ parser.add_argument(
     "--no_time", action="store_true", default=False, help="禁用时序感知"
 )
 parser.add_argument(
-    "--use_time", action="store_true", default=False, help="启用时序感知"
+    "--use_time",
+    action="store_true",
+    default=True,
+    help="启用时序感知（TiSASRec模式，默认开启）",
 )
 parser.add_argument("--no_mhc", action="store_true", default=False, help="禁用mHC模块")
 parser.add_argument("--mhc_expansion_rate", default=4, type=int, help="mHC扩展因子")

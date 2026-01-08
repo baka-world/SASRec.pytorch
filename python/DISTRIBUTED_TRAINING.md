@@ -72,6 +72,31 @@ torchrun \
 | `--use_amp` | 启用自动混合精度，节省显存 | True |
 | `--multi_gpu` | 启用分布式训练 | False |
 | `--num_workers` | 数据加载线程数 | 3 |
+| `--use_time` | 启用时序感知（TiSASRec模式） | **True** |
+| `--no_mhc` | 禁用mHC模块 | False |
+| `--gradient_accumulation_steps` | 梯度累积步数，用于扩大有效batch_size | 1 |
+
+## 模型选择
+
+本项目支持多种模型配置：
+
+| 模式 | 命令 | 说明 |
+|------|------|------|
+| **TiSASRec + mHC（默认）** | `--use_time`（默认开启） | 时序感知自注意力 + mHC残差连接 |
+| **TiSASRec** | `--use_time --no_mhc` | 仅时序感知自注意力 |
+| **SASRec + mHC** | 无 `--use_time` 且无 `--no_mhc` | 标准自注意力 + mHC残差连接 |
+| **SASRec** | `--no_mhc` | 标准自注意力 |
+
+### 默认配置说明
+
+默认使用 **TiSASRec + mHC** 混合模型，这是推荐的高性能配置：
+- **TiSASRec**：引入时间间隔信息，学习用户兴趣随时间的演变
+- **mHC**：流形约束超连接，增强模型表达能力
+
+如需使用标准SASRec：
+```bash
+--no_mhc --no_time
+```
 
 ## 性能优化建议
 
