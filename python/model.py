@@ -5,6 +5,54 @@ import sys
 FLOAT_MIN = -sys.float_info.max
 
 
+class NumericallyStableMultiheadAttention(torch.nn.Module):
+    def __init__(self, hidden_units, num_heads, dropout_rate, add_zero_attn=False):
+        super(NumericallyStableMultiheadAttention, self).__init__()
+        self.hidden_units = hidden_units
+        self.num_heads = num_heads
+        self.head_size = hidden_units // num_heads
+
+        self.q_w = torch.nn.Linear(hidden_units, hidden_units)
+        self.k_w = torch.nn.Linear(hidden_units, hidden_units)
+        self.v_w = torch.nn.Linear(hidden_units, hidden_units)
+        self.out_w = torch.nn.Linear(hidden_units, hidden_units)
+
+        self.dropout = torch.nn.Dropout(p=dropout_rate)
+        self.add_zero_attn = add_zero_attn
+
+        torch.nn.init.xavier_uniform_(self.q_w.weight)
+        torch.nn.init.xavier_uniform_(self.k_w.weight)
+        torch.nn.init.xavier_uniform_(self.v_w.weight)
+        torch.nn.init.xavier_uniform_(self.out_w.weight)
+
+    def forward(self, queries, keys, values, attn_mask=None):
+        batch_size = queries.shape[0]
+        seq_len = queries.shape[1]
+
+        Q = self.q_w(queries)
+        K = self.k_w(keys)
+        V = self.v_w(values)
+
+        Q = Q.view(batch_size, seq_len, self.num_heads, self.head_size).transpose(1, 2)
+        K = K.view(batch_size, seq_len, self.num_heads, self.head_size).transpose(1, 2)
+        V = V.view(batch_size, seq_len, self.num_heads, self.head_size).transpose(1, 2)
+
+        attn_scores = torch.matmul(Q, K.transpose(2, 3)) / (self.head_size**0.5)
+
+        if attn_mask is not None:
+            attn_scores = attn_scores.masked_fill(attn_mask, FLOAT_MIN)
+
+        attn_weights = torch.nn.functional.softmax(attn_scores, dim=-1)
+        attn_weights = self.dropout(attn_weights)
+
+        outputs = torch.matmul(attn_weights, V)
+        outputs = outputs.transpose(1, 2).contiguous()
+        outputs = outputs.view(batch_size, seq_len, self.hidden_units)
+        outputs = self.out_w(outputs)
+
+        return outputs, attn_weights
+
+
 class PointWiseFeedForward(torch.nn.Module):
     """
     点式前馈神经网络（Point-wise Feed Forward Network）
@@ -451,7 +499,7 @@ class SASRec(torch.nn.Module):
             self.attention_layernorms.append(new_attn_layernorm)
 
             # 多头自注意力层
-            new_attn_layer = torch.nn.MultiheadAttention(
+            new_attn_layer = NumericallyStableMultiheadAttention(
                 args.hidden_units, args.num_heads, args.dropout_rate
             )
             self.attention_layers.append(new_attn_layer)
