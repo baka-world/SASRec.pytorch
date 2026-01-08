@@ -384,7 +384,9 @@ if __name__ == "__main__":
             break
 
         accumulated_loss = None
+        epoch_total_loss = 0
         accumulation_step = 0
+        num_accumulation_batches = 0
 
         for step in range(num_batch):
             batch_data = sampler.next_batch()
@@ -432,6 +434,7 @@ if __name__ == "__main__":
                 else accumulated_loss + loss.item() * args.gradient_accumulation_steps
             )
             accumulation_step += 1
+            num_accumulation_batches += 1
 
             if accumulation_step % args.gradient_accumulation_steps == 0:
                 if use_amp:
@@ -447,15 +450,8 @@ if __name__ == "__main__":
                 for param_group in adam_optimizer.param_groups:
                     param_group["lr"] = current_lr
 
+                epoch_total_loss += accumulated_loss
                 accumulated_loss = None
-
-        epoch_loss = (
-            accumulated_loss / args.gradient_accumulation_steps
-            if accumulated_loss is not None
-            else 0
-        )
-        if is_main_process():
-            print(f"Epoch {epoch}: Loss={epoch_loss:.4f} LR={current_lr:.6f}")
 
         if accumulation_step % args.gradient_accumulation_steps != 0:
             if use_amp:
@@ -465,6 +461,15 @@ if __name__ == "__main__":
                 adam_optimizer.step()
             adam_optimizer.zero_grad()
             total_step += 1
+            epoch_total_loss += accumulated_loss if accumulated_loss else 0
+
+        epoch_loss = (
+            epoch_total_loss / num_accumulation_batches
+            if num_accumulation_batches > 0
+            else 0
+        )
+        if is_main_process():
+            print(f"Epoch {epoch}: Loss={epoch_loss:.4f} LR={current_lr:.6f}")
 
         if epoch % 20 == 0 or epoch == args.num_epochs:
             model.eval()
