@@ -31,6 +31,10 @@ python main.py --dataset=ml-1m --train_dir=tisasrec
 
 # 训练 TiSASRec + mHC（默认，时序感知+超连接）
 python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
+
+# 多卡训练（4x V100示例）
+python -m torch.distributed.launch --nproc_per_node=4 main_distributed.py \
+    --dataset=ml-1m --train_dir=tisasrec_dist --batch_size=512 --use_amp
 ```
 
 ## 命令行参数
@@ -57,6 +61,9 @@ python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
 | `--mhc_sinkhorn_iter` | 20 | Sinkhorn迭代次数 |
 | `--time_span` | 100 | 时间间隔范围 |
 | `--time_unit` | hour | 时间单位 |
+| `--norm_first` | False | 使用Pre-LN（True）或Post-LN（False）结构 |
+| `--multi_gpu` | False | 启用分布式训练 |
+| `--num_workers` | 3 | 数据加载线程数 |
 
 ## 实验设置（基准对比）
 
@@ -223,6 +230,7 @@ python main.py --dataset=ml-1m --train_dir=dropout_04 --dropout_rate=0.4
 | 8 GB | `--batch_size 32 --hidden_units 50 --maxlen 100 --mhc_no_amp` |
 | 16 GB | `--batch_size 64 --hidden_units 50`（默认配置） |
 | 24+ GB | `--batch_size 128 --hidden_units 128` |
+| 4x V100 32GB | `--batch_size 512 --use_amp --multi_gpu` |
 
 其他选项：
 - 减小批次：`--batch_size=64`
@@ -230,21 +238,111 @@ python main.py --dataset=ml-1m --train_dir=dropout_04 --dropout_rate=0.4
 - 减小模型：`--num_blocks=1`
 - 禁用mHC AMP：`--mhc_no_amp`
 - 使用CPU：`--device=cpu`
+- 启用多卡获得更大有效批次：`--multi_gpu`
 
 ## 目录结构
 
 ```
 SASRec.pytorch/
 ├── python/
-│   ├── main.py         # 统一训练脚本
-│   ├── model.py        # SASRec/TiSASRec
-│   ├── model_mhc.py    # SASRec/TiSASRec + mHC
-│   ├── utils.py        # 工具函数
-│   └── convert_ml1m.py # 数据转换
+│   ├── main.py              # 统一训练脚本（单卡）
+│   ├── main_distributed.py  # 分布式训练脚本（多卡）
+│   ├── model.py             # SASRec/TiSASRec
+│   ├── model_mhc.py         # SASRec/TiSASRec + mHC
+│   ├── utils.py             # 工具函数
+│   ├── convert_ml1m.py      # 数据转换
+│   ├── train_distributed.sh # 多卡启动脚本
+│   ├── test_distributed.py  # 分布式环境测试
+│   └── DISTRIBUTED_TRAINING.md # 多卡训练指南
 ├── data/
 ├── docs/
 └── README.md
 ```
+
+## 多卡训练
+
+本实现支持使用PyTorch DistributedDataParallel (DDP)在多GPU上进行分布式训练。
+
+### 环境要求
+
+- PyTorch 1.9+
+- CUDA 11.0+
+- 多GPU（已在4x V100 32GB上测试）
+
+### 训练命令
+
+```bash
+# 4卡训练（推荐用于4x V100）
+python -m torch.distributed.launch --nproc_per_node=4 \
+    main_distributed.py \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_4gpu \
+    --batch_size=512 \
+    --use_amp \
+    --multi_gpu
+
+# 2卡训练
+python -m torch.distributed.launch --nproc_per_node=2 \
+    main_distributed.py \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_2gpu \
+    --batch_size=256 \
+    --use_amp \
+    --multi_gpu
+
+# 使用 torchrun（PyTorch 2.0+）
+torchrun --nproc_per_node=4 main_distributed.py \
+    --dataset=ml-1m \
+    --train_dir=tisasrec_torchrun \
+    --batch_size=512 \
+    --use_amp \
+    --multi_gpu
+```
+
+### 使用启动脚本
+
+```bash
+# 使用全部4张GPU
+cd python && ./train_distributed.sh ml-1m tisasrec_dist
+
+# 指定GPU数量
+NUM_GPUS=2 ./train_distributed.sh ml-1m tisasrec_2gpu
+```
+
+### 多卡参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--multi_gpu` | False | 启用分布式训练 |
+| `--backend` | nccl | 通信后端（nccl/gloo） |
+| `--master_port` | 29500 | 通信端口 |
+| `--batch_size` | 128 | 总批次大小（自动分配） |
+| `--use_amp` | True | 启用自动混合精度 |
+
+### 性能优化
+
+| 配置 | 单卡 | 4卡 |
+|------|------|-----|
+| batch_size | 128 | 512 |
+| lr | 0.001 | 0.002 |
+| 预期加速 | 1x | ~3.5x |
+
+### 环境测试
+
+```bash
+# 测试分布式环境
+python test_distributed.py
+```
+
+### 预期加速效果
+
+| 配置 | 相对加速 |
+|------|----------|
+| 1x V100 | 1.0x（基准） |
+| 2x V100 | ~1.8x |
+| 4x V100 | ~3.5x |
+
+注意：实际加速比取决于数据加载效率和模型架构。
 
 ## 引用
 
