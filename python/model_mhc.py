@@ -498,25 +498,25 @@ class TiSASRec(torch.nn.Module):
                 )
 
     def seq2feats(self, user_ids, log_seqs, time_matrices):
-        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+        seqs = self.item_emb(torch.as_tensor(log_seqs, device=self.dev))
         seqs *= self.item_emb.embedding_dim**0.5
         seqs = self.item_emb_dropout(seqs)
 
         positions = np.tile(np.arange(log_seqs.shape[1]), [log_seqs.shape[0], 1])
-        positions = torch.LongTensor(positions).to(self.dev)
+        positions = torch.as_tensor(positions, device=self.dev)
         abs_pos_K = self.abs_pos_K_emb(positions)
         abs_pos_V = self.abs_pos_V_emb(positions)
         abs_pos_K = self.abs_pos_K_emb_dropout(abs_pos_K)
         abs_pos_V = self.abs_pos_V_emb_dropout(abs_pos_V)
 
-        time_matrices = torch.LongTensor(time_matrices).to(self.dev)
+        time_matrices = torch.as_tensor(time_matrices, device=self.dev)
         time_matrices = torch.clamp(time_matrices, min=0, max=self.time_span)
         time_matrix_K = self.time_matrix_K_emb(time_matrices).float()
         time_matrix_V = self.time_matrix_V_emb(time_matrices).float()
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
         time_matrix_V = self.time_matrix_V_dropout(time_matrix_V)
 
-        timeline_mask = torch.BoolTensor(log_seqs == 0).to(self.dev)
+        timeline_mask = torch.as_tensor(log_seqs == 0, dtype=torch.bool, device=self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1)
 
         tl = seqs.shape[1]
@@ -591,8 +591,8 @@ class TiSASRec(torch.nn.Module):
     def forward(self, user_ids, log_seqs, time_matrices, pos_seqs, neg_seqs):
         log_feats = self.seq2feats(user_ids, log_seqs, time_matrices)
 
-        pos_embs = self.item_emb(torch.LongTensor(pos_seqs).to(self.dev))
-        neg_embs = self.item_emb(torch.LongTensor(neg_seqs).to(self.dev))
+        pos_embs = self.item_emb(torch.as_tensor(pos_seqs, device=self.dev))
+        neg_embs = self.item_emb(torch.as_tensor(neg_seqs, device=self.dev))
 
         pos_logits = (log_feats * pos_embs).sum(dim=-1)
         neg_logits = (log_feats * neg_embs).sum(dim=-1)
@@ -604,7 +604,7 @@ class TiSASRec(torch.nn.Module):
 
         final_feat = log_feats[:, -1, :]
 
-        item_embs = self.item_emb(torch.LongTensor(item_indices).to(self.dev))
+        item_embs = self.item_emb(torch.as_tensor(item_indices, device=self.dev))
 
         logits = item_embs.matmul(final_feat.unsqueeze(-1)).squeeze(-1)
 
@@ -676,7 +676,7 @@ class SASRec(torch.nn.Module):
                 )
 
     def log2feats(self, log_seqs):
-        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+        seqs = self.item_emb(torch.as_tensor(log_seqs, device=self.dev))
 
         if torch.isnan(seqs).any():
             print(f"DEBUG: NaN in item_emb output")
@@ -688,7 +688,7 @@ class SASRec(torch.nn.Module):
 
         poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
         poss = poss * (log_seqs != 0)
-        seqs += self.pos_emb(torch.LongTensor(poss).to(self.dev))
+        seqs += self.pos_emb(torch.as_tensor(poss, device=self.dev))
         seqs = self.emb_dropout(seqs)
 
         if torch.isnan(seqs).any():
@@ -855,8 +855,8 @@ class SASRec(torch.nn.Module):
 
             sys.exit(1)
 
-        pos_embs = self.item_emb(torch.LongTensor(pos_seqs).to(self.dev))
-        neg_embs = self.item_emb(torch.LongTensor(neg_seqs).to(self.dev))
+        pos_embs = self.item_emb(torch.as_tensor(pos_seqs, device=self.dev))
+        neg_embs = self.item_emb(torch.as_tensor(neg_seqs, device=self.dev))
 
         pos_logits = (log_feats * pos_embs).sum(dim=-1)
         neg_logits = (log_feats * neg_embs).sum(dim=-1)
@@ -868,7 +868,7 @@ class SASRec(torch.nn.Module):
 
         final_feat = log_feats[:, -1, :]
 
-        item_embs = self.item_emb(torch.LongTensor(item_indices).to(self.dev))
+        item_embs = self.item_emb(torch.as_tensor(item_indices, device=self.dev))
 
         logits = item_embs.matmul(final_feat.unsqueeze(-1)).squeeze(-1)
 
