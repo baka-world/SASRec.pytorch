@@ -254,6 +254,7 @@ if __name__ == "__main__":
     time_span = args.time_span if args.use_time or not args.no_time else 0
     sampler = get_sampler(user_train, usernum, itemnum, time_span)
 
+    args.device = torch.device(f"cuda:{args.local_rank}" if torch.cuda.is_available() else "cpu")
     model = get_model(usernum, itemnum, time_span).to(args.local_rank)
 
     for name, param in model.named_parameters():
