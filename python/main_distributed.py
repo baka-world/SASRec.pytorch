@@ -147,7 +147,8 @@ args = parser.parse_args()
 
 
 def get_model(usernum, itemnum, time_span):
-    if args.use_time or not args.no_time:
+    use_time_model = args.use_time and not args.no_time
+    if use_time_model:
         if not args.no_mhc:
             return TiSASRec_mHC(usernum, itemnum, time_span, args)
         else:
@@ -160,7 +161,8 @@ def get_model(usernum, itemnum, time_span):
 
 
 def get_sampler(user_train, usernum, itemnum, time_span):
-    if args.use_time or not args.no_time:
+    use_time_model = args.use_time and not args.no_time
+    if use_time_model:
         user_timestamps = get_user_timestamps(args.dataset, user_train)
         return WarpSamplerWithTime(
             user_train,
@@ -251,7 +253,7 @@ if __name__ == "__main__":
         log_file = open(os.path.join(output_dir, "log.txt"), "w")
         log_file.write("epoch (val_ndcg, val_hr) (test_ndcg, test_hr)\n")
 
-    time_span = args.time_span if args.use_time or not args.no_time else 0
+    time_span = args.time_span if args.use_time and not args.no_time else 0
     sampler = get_sampler(user_train, usernum, itemnum, time_span)
 
     args.device = torch.device(
@@ -296,7 +298,8 @@ if __name__ == "__main__":
 
     if args.inference_only:
         model.eval()
-        if args.use_time or not args.no_time:
+        use_time_model = args.use_time and not args.no_time
+        if use_time_model:
             t_test = evaluate_tisasrec(model, dataset, args)
         else:
             t_test = evaluate(model, dataset, args)
@@ -320,12 +323,18 @@ if __name__ == "__main__":
         print("[Debug] Testing forward pass...")
     torch.distributed.barrier()
     try:
-        test_input_u = torch.LongTensor([1]).to(args.local_rank)
-        test_input_seq = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
-        test_input_pos = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
-        test_input_neg = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
-        with torch.no_grad():
-            _ = model(test_input_u, test_input_seq, test_input_pos, test_input_neg)
+        test_u = torch.LongTensor([1]).to(args.local_rank)
+        test_seq = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
+        test_pos = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
+        test_neg = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
+        use_time_model = args.use_time and not args.no_time
+        if use_time_model:
+            test_time_mat = torch.zeros((1, args.maxlen, 10), dtype=torch.long).to(args.local_rank)
+            with torch.no_grad():
+                _, _ = model(test_u, test_seq, test_time_mat, test_pos, test_neg)
+        else:
+            with torch.no_grad():
+                _, _ = model(test_u, test_seq, test_pos, test_neg)
         torch.distributed.barrier()
         if is_main_process():
             print("[Debug] Forward pass test successful!")
@@ -393,7 +402,8 @@ if __name__ == "__main__":
             t1 = time.time() - t0
             T += t1
 
-            if args.use_time or not args.no_time:
+            use_time_model = args.use_time and not args.no_time
+            if use_time_model:
                 t_test = evaluate_tisasrec(model, dataset, args)
                 t_valid = evaluate_valid_tisasrec(model, dataset, args)
             else:
