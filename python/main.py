@@ -104,6 +104,18 @@ parser.add_argument(
     default=False,
     help="禁用TiSASRec时序感知机制，使用标准SASRec",
 )
+parser.add_argument(
+    "--use_time",
+    action="store_true",
+    default=False,
+    help="启用TiSASRec时序感知机制（默认行为，可忽略）",
+)
+parser.add_argument(
+    "--no_mhc",
+    action="store_true",
+    default=False,
+    help="禁用mHC模块，使用标准模型",
+)
 
 # mHC参数
 parser.add_argument("--mhc_expansion_rate", default=4, type=int, help="mHC扩展因子n")
