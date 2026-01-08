@@ -26,14 +26,4 @@ torchrun \
     main_distributed.py \
     --dataset=ml-1m \
     --train_dir=tisasrec_dist \
-    --batch_size=1024 \
-    --num_epochs=200 \
-    --lr=0.001 \
-    --num_heads=4 \
-    --num_blocks=3 \
-    --hidden_units=100 \
-    --maxlen=100 \
-    --dropout_rate=0.2 \
-    --num_workers=8 \
-    --use_amp \
     --multi_gpu
