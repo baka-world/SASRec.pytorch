@@ -154,6 +154,9 @@ parser.add_argument(
     "--mhc_no_amp", action="store_true", default=False, help="mHC禁用AMP"
 )
 parser.add_argument("--use_amp", action="store_true", default=True, help="启用AMP")
+parser.add_argument(
+    "--gradient_accumulation_steps", default=1, type=int, help="梯度累积步数"
+)
 parser.add_argument("--time_span", default=100, type=int, help="时间间分离散化范围")
 parser.add_argument(
     "--time_unit", default="hour", type=str, choices=["second", "minute", "hour", "day"]
@@ -380,6 +383,9 @@ if __name__ == "__main__":
         if args.inference_only:
             break
 
+        accumulated_loss = None
+        accumulation_step = 0
+
         for step in range(num_batch):
             batch_data = sampler.next_batch()
 
@@ -407,8 +413,6 @@ if __name__ == "__main__":
             pos_labels = torch.ones(pos_logits.shape, device=args.local_rank)
             neg_labels = torch.zeros(neg_logits.shape, device=args.local_rank)
 
-            adam_optimizer.zero_grad()
-
             indices = torch.where(pos != 0)
             loss = bce_criterion(pos_logits[indices], pos_labels[indices])
             loss += bce_criterion(neg_logits[indices], neg_labels[indices])
@@ -416,24 +420,45 @@ if __name__ == "__main__":
             for param in model.module.item_emb.parameters():
                 loss += args.l2_emb * torch.sum(param**2)
 
+            loss = loss / args.gradient_accumulation_steps
+            loss.backward()
+
+            accumulated_loss = (
+                loss.item() * args.gradient_accumulation_steps
+                if accumulated_loss is None
+                else accumulated_loss + loss.item() * args.gradient_accumulation_steps
+            )
+            accumulation_step += 1
+
+            if accumulation_step % args.gradient_accumulation_steps == 0:
+                if use_amp:
+                    scaler.step(adam_optimizer)
+                    scaler.update()
+                else:
+                    adam_optimizer.step()
+
+                adam_optimizer.zero_grad()
+                total_step += 1
+
+                current_lr = get_lr(total_step, args)
+                for param_group in adam_optimizer.param_groups:
+                    param_group["lr"] = current_lr
+
+                if is_main_process() and step % 100 == 0:
+                    print(
+                        f"Epoch {epoch} Step {step}: Loss={accumulated_loss / args.gradient_accumulation_steps:.4f} LR={current_lr:.6f}"
+                    )
+
+                accumulated_loss = None
+
+        if accumulation_step % args.gradient_accumulation_steps != 0:
             if use_amp:
-                scaler.scale(loss).backward()
                 scaler.step(adam_optimizer)
                 scaler.update()
             else:
-                loss.backward()
                 adam_optimizer.step()
-
-            current_lr = get_lr(total_step, args)
-            for param_group in adam_optimizer.param_groups:
-                param_group["lr"] = current_lr
-
+            adam_optimizer.zero_grad()
             total_step += 1
-
-            if is_main_process() and step % 100 == 0:
-                print(
-                    f"Epoch {epoch} Step {step}: Loss={loss.item():.4f} LR={current_lr:.6f}"
-                )
 
         if epoch % 20 == 0 or epoch == args.num_epochs:
             model.eval()
