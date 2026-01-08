@@ -227,6 +227,12 @@ class mHCResidual(torch.nn.Module):
     def _forward_impl(self, x, function_output):
         batch_size, seq_len, C = x.shape
 
+        if torch.isnan(x).any():
+            print(f"DEBUG: NaN detected in mHCResidual input x")
+            import sys
+
+            sys.exit(1)
+
         x_expanded = x.repeat(1, 1, self.n)
         x_expanded = x_expanded.view(batch_size, seq_len, self.n, self.C)
 
@@ -234,6 +240,12 @@ class mHCResidual(torch.nn.Module):
         x_norm = x_flat / (
             torch.norm(x_flat, p=2, dim=-1, keepdim=True) / (self.nC**0.5) + 1e-12
         )
+
+        if torch.isnan(x_norm).any():
+            print(f"DEBUG: NaN detected in x_norm")
+            import sys
+
+            sys.exit(1)
 
         H_tilde_pre = self.alpha_pre * (
             x_norm @ self.phi_pre.weight.t() + self.phi_pre.bias
@@ -245,11 +257,23 @@ class mHCResidual(torch.nn.Module):
             x_norm @ self.phi_res.weight.t() + self.phi_res.bias
         )
 
+        if torch.isnan(H_tilde_pre).any() or torch.isnan(H_tilde_res_flat).any():
+            print(f"DEBUG: NaN detected in H_tilde values")
+            import sys
+
+            sys.exit(1)
+
         H_pre = self.sigmoid(H_tilde_pre)
         H_post = 2 * self.sigmoid(H_tilde_post)
         H_res = sinkhorn_knopp(
             H_tilde_res_flat.view(-1, self.n, self.n), max_iter=self.sinkhorn_iter
         )
+
+        if torch.isnan(H_res).any():
+            print(f"DEBUG: NaN detected in H_res after sinkhorn_knopp")
+            import sys
+
+            sys.exit(1)
 
         H_pre = H_pre.view(batch_size, seq_len, self.n, 1)
         H_post = H_post.view(batch_size, seq_len, self.n, 1)
@@ -576,6 +600,13 @@ class SASRec(torch.nn.Module):
 
     def forward(self, user_ids, log_seqs, pos_seqs, neg_seqs):
         log_feats = self.log2feats(log_seqs)
+
+        if torch.isnan(log_feats).any():
+            print(f"DEBUG: NaN detected in log_feats")
+            print(f"  NaN count: {torch.isnan(log_feats).sum().item()}")
+            import sys
+
+            sys.exit(1)
 
         pos_embs = self.item_emb(torch.LongTensor(pos_seqs).to(self.dev))
         neg_embs = self.item_emb(torch.LongTensor(neg_seqs).to(self.dev))
