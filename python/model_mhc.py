@@ -486,7 +486,7 @@ class SASRec(torch.nn.Module):
         seqs *= self.item_emb.embedding_dim**0.5
 
         poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
-        poss = poss * (log_seqs.cpu().numpy() != 0)
+        poss = poss * (log_seqs != 0)
         seqs += self.pos_emb(torch.LongTensor(poss).to(self.dev))
         seqs = self.emb_dropout(seqs)
 
