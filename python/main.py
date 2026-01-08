@@ -327,6 +327,21 @@ if __name__ == "__main__":
                 )
                 with torch.amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
+
+                if torch.isnan(pos_logits).any() or torch.isnan(neg_logits).any():
+                    print(f"DEBUG: NaN detected in logits at iteration {step}")
+                    print(
+                        f"  pos_logits has NaN: {torch.isnan(pos_logits).sum().item()}"
+                    )
+                    print(
+                        f"  neg_logits has NaN: {torch.isnan(neg_logits).sum().item()}"
+                    )
+                    print(
+                        f"  log_seqs dtype: {type(seq)}, min: {seq.min()}, max: {seq.max()}"
+                    )
+                    import sys
+
+                    sys.exit(1)
             else:
                 u, seq, pos, neg = batch_data
                 u, seq, pos, neg = (
@@ -337,6 +352,21 @@ if __name__ == "__main__":
                 )
                 with torch.amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, pos, neg)
+
+                if torch.isnan(pos_logits).any() or torch.isnan(neg_logits).any():
+                    print(f"DEBUG: NaN detected in logits at iteration {step}")
+                    print(
+                        f"  pos_logits has NaN: {torch.isnan(pos_logits).sum().item()}"
+                    )
+                    print(
+                        f"  neg_logits has NaN: {torch.isnan(neg_logits).sum().item()}"
+                    )
+                    print(
+                        f"  log_seqs dtype: {type(seq)}, min: {seq.min()}, max: {seq.max()}"
+                    )
+                    import sys
+
+                    sys.exit(1)
 
             pos_labels, neg_labels = (
                 torch.ones(pos_logits.shape, device=args.device),
