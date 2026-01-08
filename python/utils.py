@@ -366,7 +366,7 @@ def evaluate(model, dataset, args):
             item_idx.append(t)
 
         # 预测：获取模型对候选物品的得分
-        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
+        predictions = -model.module.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
         predictions = predictions[0]
 
         # 计算排名
@@ -439,7 +439,7 @@ def evaluate_valid(model, dataset, args):
                 t = np.random.randint(1, itemnum + 1)
             item_idx.append(t)
 
-        predictions = -model.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
+        predictions = -model.module.predict(*[np.array(l) for l in [[u], [seq], item_idx]])
         predictions = predictions[0]
 
         rank = predictions.argsort().argsort()[0].item()
@@ -773,7 +773,7 @@ def evaluate_tisasrec(model, dataset, args):
             item_idx.append(t)
 
         # 预测
-        predictions = -model.predict(
+        predictions = -model.module.predict(
             *[np.array(l) for l in [[u], [seq], [time_mat], item_idx]]
         )
         predictions = predictions[0]
@@ -870,7 +870,7 @@ def evaluate_valid_tisasrec(model, dataset, args):
                 t = np.random.randint(1, itemnum + 1)
             item_idx.append(t)
 
-        predictions = -model.predict(
+        predictions = -model.module.predict(
             *[np.array(l) for l in [[u], [seq], [time_mat], item_idx]]
         )
         predictions = predictions[0]
