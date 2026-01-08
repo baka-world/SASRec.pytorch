@@ -3,22 +3,22 @@ SASRec Benchmark: Unified Training Script for All Model Variants
 
 支持以下模式：
 1. SASRec (基准)
-2. SASRec + mHC
+2. SASRec + mHC (默认)
 3. TiSASRec (use_time)
-4. TiSASRec + mHC
+4. TiSASRec + mHC (默认)
 
 使用方法：
     # SASRec基准
-    python main_benchmark.py --dataset=ml-1m --train_dir=sasrec_base
+    python main.py --dataset=ml-1m --train_dir=sasrec_base --no_mhc
 
-    # SASRec + mHC
-    python main_benchmark.py --dataset=ml-1m --train_dir=sasrec_mhc --use_mhc
+    # SASRec + mHC (默认)
+    python main.py --dataset=ml-1m --train_dir=sasrec_mhc
 
     # TiSASRec
-    python main_benchmark.py --dataset=ml-1m --train_dir=tisasrec --use_time
+    python main.py --dataset=ml-1m --train_dir=tisasrec --use_time --no_mhc
 
-    # TiSASRec + mHC
-    python main_benchmark.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time --use_mhc
+    # TiSASRec + mHC (默认)
+    python main.py --dataset=ml-1m --train_dir=tisasrec_mhc --use_time
 """
 
 import os
