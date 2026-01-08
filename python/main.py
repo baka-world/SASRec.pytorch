@@ -117,6 +117,14 @@ parser.add_argument(
     "--mhc_sinkhorn_iter", default=20, type=int, help="mHC Sinkhorn-Knopp迭代次数"
 )
 
+parser.add_argument(
+    "--mhc_no_amp",
+    action="store_true",
+    default=False,
+    help="禁用mHC模块的AMP计算（解决NaN问题）。当启用--use_mhc时，"
+    "mHC模块会使用FP32精度计算，避免自动混合精度导致的数值溢出问题。",
+)
+
 # 训练优化参数
 parser.add_argument(
     "--use_amp",

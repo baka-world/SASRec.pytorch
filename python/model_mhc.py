@@ -173,6 +173,7 @@ class mHCResidual(torch.nn.Module):
         expansion_rate=4,
         init_gate=0.01,
         sinkhorn_iter=20,
+        mhc_no_amp=False,
     ):
         """
         参数:
@@ -180,12 +181,14 @@ class mHCResidual(torch.nn.Module):
             expansion_rate: 扩展因子 n，默认为4
             init_gate: 门控因子α的初始值，默认为0.01
             sinkhorn_iter: Sinkhorn-Knopp算法的迭代次数，默认为20
+            mhc_no_amp: 是否禁用mHC模块的AMP计算，默认为False
         """
         super(mHCResidual, self).__init__()
 
         self.hidden_units = hidden_units
         self.expansion_rate = expansion_rate
         self.sinkhorn_iter = sinkhorn_iter
+        self.mhc_no_amp = mhc_no_amp
 
         self.n = expansion_rate
         self.C = hidden_units
@@ -216,6 +219,12 @@ class mHCResidual(torch.nn.Module):
         返回:
             输出张量，形状为 (batch_size, seq_len, C)
         """
+        if self.mhc_no_amp and torch.cuda.is_available():
+            with torch.cuda.amp.autocast(enabled=False):
+                return self._forward_impl(x, function_output)
+        return self._forward_impl(x, function_output)
+
+    def _forward_impl(self, x, function_output):
         batch_size, seq_len, C = x.shape
 
         x_expanded = x.repeat(1, 1, self.n)
@@ -280,6 +289,7 @@ class TiSASRec(torch.nn.Module):
 
         self.use_mhc = getattr(args, "use_mhc", False)
         self.mhc_expansion_rate = getattr(args, "mhc_expansion_rate", 4)
+        self.mhc_no_amp = getattr(args, "mhc_no_amp", False)
 
         self.item_emb = torch.nn.Embedding(
             self.item_num + 1, args.hidden_units, padding_idx=0
@@ -331,12 +341,16 @@ class TiSASRec(torch.nn.Module):
             if self.use_mhc:
                 self.mhc_attn.append(
                     mHCResidual(
-                        args.hidden_units, expansion_rate=self.mhc_expansion_rate
+                        args.hidden_units,
+                        expansion_rate=self.mhc_expansion_rate,
+                        mhc_no_amp=self.mhc_no_amp,
                     )
                 )
                 self.mhc_ffn.append(
                     mHCResidual(
-                        args.hidden_units, expansion_rate=self.mhc_expansion_rate
+                        args.hidden_units,
+                        expansion_rate=self.mhc_expansion_rate,
+                        mhc_no_amp=self.mhc_no_amp,
                     )
                 )
 
@@ -434,6 +448,7 @@ class SASRec(torch.nn.Module):
 
         self.use_mhc = getattr(args, "use_mhc", False)
         self.mhc_expansion_rate = getattr(args, "mhc_expansion_rate", 4)
+        self.mhc_no_amp = getattr(args, "mhc_no_amp", False)
 
         self.item_emb = torch.nn.Embedding(
             self.item_num + 1, args.hidden_units, padding_idx=0
@@ -473,12 +488,16 @@ class SASRec(torch.nn.Module):
             if self.use_mhc:
                 self.mhc_attn.append(
                     mHCResidual(
-                        args.hidden_units, expansion_rate=self.mhc_expansion_rate
+                        args.hidden_units,
+                        expansion_rate=self.mhc_expansion_rate,
+                        mhc_no_amp=self.mhc_no_amp,
                     )
                 )
                 self.mhc_ffn.append(
                     mHCResidual(
-                        args.hidden_units, expansion_rate=self.mhc_expansion_rate
+                        args.hidden_units,
+                        expansion_rate=self.mhc_expansion_rate,
+                        mhc_no_amp=self.mhc_no_amp,
                     )
                 )
 
