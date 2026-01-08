@@ -25,6 +25,9 @@ import math
 import gc
 import signal
 import torch
+torch.backends.cudnn.benchmark = True
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 import torch.distributed as dist
 import torch.nn as nn
 import argparse
@@ -279,8 +282,8 @@ if __name__ == "__main__":
             model,
             device_ids=[args.local_rank],
             output_device=args.local_rank,
-            broadcast_buffers=True,
-            find_unused_parameters=True,
+            broadcast_buffers=False,  # 禁用以提升性能
+            
         )
 
     epoch_start_idx = 1
@@ -308,8 +311,8 @@ if __name__ == "__main__":
 
     bce_criterion = torch.nn.BCEWithLogitsLoss()
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
-    scaler = None  # 临时禁用 AMP 以解决多卡训练卡住问题
-    use_amp = False  # 临时禁用 autocast
+    scaler = torch.amp.GradScaler("cuda") if args.use_amp else None
+    use_amp = args.use_amp
 
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
@@ -361,8 +364,8 @@ if __name__ == "__main__":
                 neg = torch.LongTensor(np.array(neg)).to(args.local_rank)
                 time_mat = torch.LongTensor(np.array(time_mat)).to(args.local_rank)
 
-                # with torch.amp.autocast("cuda"):  # 临时禁用 AMP
-                pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
+                with torch.amp.autocast("cuda", enabled=use_amp):
+                    pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
             else:
                 u, seq, pos, neg = batch_data
                 u = torch.LongTensor(np.array(u)).to(args.local_rank)
@@ -370,8 +373,8 @@ if __name__ == "__main__":
                 pos = torch.LongTensor(np.array(pos)).to(args.local_rank)
                 neg = torch.LongTensor(np.array(neg)).to(args.local_rank)
 
-                # with torch.amp.autocast("cuda"):  # 临时禁用 AMP
-                pos_logits, neg_logits = model(u, seq, pos, neg)
+                with torch.amp.autocast("cuda", enabled=use_amp):
+                    pos_logits, neg_logits = model(u, seq, pos, neg)
 
             pos_labels = torch.ones(pos_logits.shape, device=args.local_rank)
             neg_labels = torch.zeros(neg_logits.shape, device=args.local_rank)
@@ -385,9 +388,13 @@ if __name__ == "__main__":
             for param in model.module.item_emb.parameters():
                 loss += args.l2_emb * torch.sum(param**2)
 
-            # 临时禁用 AMP，直接使用普通反向传播
-            loss.backward()
-            adam_optimizer.step()
+            if use_amp:
+                scaler.scale(loss).backward()
+                scaler.step(adam_optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                adam_optimizer.step()
 
             current_lr = get_lr(total_step, args)
             for param_group in adam_optimizer.param_groups:
