@@ -447,12 +447,15 @@ if __name__ == "__main__":
                 for param_group in adam_optimizer.param_groups:
                     param_group["lr"] = current_lr
 
-                if is_main_process():
-                    print(
-                        f"Epoch {epoch} Step {step}: Loss={accumulated_loss / args.gradient_accumulation_steps:.4f} LR={current_lr:.6f}"
-                    )
-
                 accumulated_loss = None
+
+        epoch_loss = (
+            accumulated_loss / args.gradient_accumulation_steps
+            if accumulated_loss
+            else 0
+        )
+        if is_main_process():
+            print(f"Epoch {epoch}: Loss={epoch_loss:.4f} LR={current_lr:.6f}")
 
         if accumulation_step % args.gradient_accumulation_steps != 0:
             if use_amp:
