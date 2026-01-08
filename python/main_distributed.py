@@ -316,8 +316,8 @@ if __name__ == "__main__":
 
     try:
         for epoch in range(epoch_start_idx, args.num_epochs + 1):
-        if args.inference_only:
-            break
+            if args.inference_only:
+                break
 
         for step in range(num_batch):
             batch_data = sampler.next_batch()
