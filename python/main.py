@@ -291,7 +291,7 @@ if __name__ == "__main__":
 
     bce_criterion = torch.nn.BCEWithLogitsLoss()
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
-    scaler = amp.GradScaler() if args.use_amp else None
+    scaler = torch.amp.GradScaler("cuda") if args.use_amp else None
 
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
@@ -317,7 +317,7 @@ if __name__ == "__main__":
                     np.array(neg),
                     np.array(time_mat),
                 )
-                with amp.autocast(enabled=args.use_amp):
+                with torch.amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
             else:
                 u, seq, pos, neg = batch_data
@@ -327,7 +327,7 @@ if __name__ == "__main__":
                     np.array(pos),
                     np.array(neg),
                 )
-                with amp.autocast(enabled=args.use_amp):
+                with torch.amp.autocast("cuda", enabled=args.use_amp):
                     pos_logits, neg_logits = model(u, seq, pos, neg)
 
             pos_labels, neg_labels = (

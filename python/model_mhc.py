@@ -24,6 +24,7 @@ def sinkhorn_knopp(M, max_iter=20):
         双随机矩阵，形状与输入相同
     """
     n = M.shape[-1]
+    M = torch.clamp(M, min=-10.0, max=10.0)
     M = torch.exp(M)
     for _ in range(max_iter):
         row_sum = M.sum(dim=-1, keepdim=True)
