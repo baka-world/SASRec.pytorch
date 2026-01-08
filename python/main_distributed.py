@@ -421,7 +421,10 @@ if __name__ == "__main__":
                 loss += args.l2_emb * torch.sum(param**2)
 
             loss = loss / args.gradient_accumulation_steps
-            loss.backward()
+            if use_amp:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
 
             accumulated_loss = (
                 loss.item() * args.gradient_accumulation_steps
