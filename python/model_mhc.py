@@ -686,9 +686,11 @@ class SASRec(torch.nn.Module):
 
         seqs *= self.item_emb.embedding_dim**0.5
 
-        poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
-        poss = poss * (log_seqs != 0)
-        seqs += self.pos_emb(torch.as_tensor(poss, device=self.dev))
+        poss = torch.arange(1, log_seqs.shape[1] + 1, device=self.dev)
+        poss = poss.unsqueeze(0).expand(log_seqs.shape[0], -1)
+        mask = (log_seqs != 0)
+        poss = poss * mask
+        seqs += self.pos_emb(poss)
         seqs = self.emb_dropout(seqs)
 
         if torch.isnan(seqs).any():
