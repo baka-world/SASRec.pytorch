@@ -329,7 +329,9 @@ if __name__ == "__main__":
         test_neg = torch.zeros((1, args.maxlen), dtype=torch.long).to(args.local_rank)
         use_time_model = args.use_time and not args.no_time
         if use_time_model:
-            test_time_mat = torch.zeros((1, args.maxlen, 10), dtype=torch.long).to(args.local_rank)
+            test_time_mat = torch.zeros((1, args.maxlen, 10), dtype=torch.long).to(
+                args.local_rank
+            )
             with torch.no_grad():
                 _, _ = model(test_u, test_seq, test_time_mat, test_pos, test_neg)
         else:
@@ -376,7 +378,7 @@ if __name__ == "__main__":
 
             adam_optimizer.zero_grad()
 
-            indices = np.where(pos != 0)
+            indices = torch.where(pos != 0)
             loss = bce_criterion(pos_logits[indices], pos_labels[indices])
             loss += bce_criterion(neg_logits[indices], neg_labels[indices])
 
