@@ -108,40 +108,45 @@ class ExperimentManager:
         return exp
 
     def get_gpu_memory(self, gpu_id: int) -> Optional[float]:
-        """获取GPU显存使用量(GB)"""
+        """获取GPU显存使用量(MiB)，返回0表示空闲GPU"""
         try:
             result = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=memory.used",
-                    "--format=csv,noheader,nounits",
-                ],
+                ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader"],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
             lines = result.stdout.strip().split("\n")
             if gpu_id < len(lines):
-                return float(lines[gpu_id]) / 1024  # 转换为GB
+                # 格式: "3543 MiB"
+                line = lines[gpu_id].strip()
+                value = line.split()[0] if line else "0"
+                return float(value)
+            return 0
         except:
-            pass
-        return None
+            return 0
 
     def auto_assign_gpu(self, exp: Experiment) -> int:
-        """自动分配GPU（选择最空闲的GPU）
+        """自动分配GPU（选择运行实验最少的GPU）
 
         Returns:
             分配的GPU编号
         """
-        available_gpus = []
-        for gpu_id in range(4):
-            if gpu_id not in self.running:
-                mem = self.get_gpu_memory(gpu_id)
-                available_gpus.append((gpu_id, mem))
+        # 统计每个GPU上正在运行的实验数量
+        gpu_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+        for gpu_id in self.running:
+            if gpu_id in gpu_counts:
+                gpu_counts[gpu_id] += 1
 
-        # 按显存从小到大排序，选择最空闲的
-        available_gpus.sort(key=lambda x: x[1] if x[1] else float("inf"))
-        return available_gpus[0][0] if available_gpus else 0
+        # 选择实验数量最少的GPU
+        min_count = min(gpu_counts.values())
+        available = [gid for gid, count in gpu_counts.items() if count == min_count]
+
+        # 如果有多个可选，选择显存最少的
+        if len(available) > 1:
+            available.sort(key=lambda gid: self.get_gpu_memory(gid))
+        
+        return available[0]
 
     def get_available_gpu(self, min_memory: float = 4.0) -> Optional[int]:
         """获取可用GPU"""
@@ -254,14 +259,23 @@ class ExperimentManager:
             # 启动新实验
             started = False
             for exp in self.experiments:
-                if exp.status == Status.PENDING and exp.gpu in self.running:
+                if exp.status != Status.PENDING:
                     continue
 
-                if exp.status == Status.PENDING and self.is_gpu_free(exp.gpu):
-                    self.start_experiment(exp)
-                    started = True
-                    self.print_status()
-                    break
+                # 自动分配GPU（如果需要）
+                if exp.gpu == -1:
+                    exp.gpu = self.auto_assign_gpu(exp)
+                    print(f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}")
+
+                # 检查GPU是否空闲
+                if exp.gpu in self.running:
+                    continue
+
+                # 启动实验
+                self.start_experiment(exp)
+                started = True
+                self.print_status()
+                break
 
             if not started:
                 # 检查是否所有实验都完成
