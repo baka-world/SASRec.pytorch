@@ -471,7 +471,7 @@ if __name__ == "__main__":
             avg_loss = epoch_loss_sum / epoch_loss_count if epoch_loss_count > 0 else 0
             print(f"Epoch {epoch}: Loss={avg_loss:.4f} LR={current_lr:.6f}")
 
-        if epoch % 20 == 0:
+        if epoch % 10 == 0:
             model.eval()
             t1 = time.time() - t0
             T += t1
