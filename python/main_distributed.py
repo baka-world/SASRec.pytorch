@@ -103,7 +103,7 @@ def setup_distributed(args):
             )
 
         args.batch_size = max(1, args.batch_size // args.world_size)
-        args.num_workers = max(1, args.num_workers // args.world_size)
+        args.num_workers = max(4, (args.num_workers * args.world_size))
 
         if is_main_process():
             print(
