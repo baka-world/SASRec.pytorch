@@ -394,6 +394,9 @@ if __name__ == "__main__":
         if args.inference_only:
             break
 
+        epoch_loss_sum = 0.0
+        epoch_loss_count = 0
+
         for step in range(num_batch):
             batch_data = sampler.next_batch()
 
@@ -451,12 +454,12 @@ if __name__ == "__main__":
 
             total_step += 1
 
-            if is_main_process():
-                print(
-                    "loss in epoch {} iteration {}: {:.4f} lr: {:.6f}".format(
-                        epoch, step, loss.item(), current_lr
-                    )
-                )
+            epoch_loss_sum += loss.item()
+            epoch_loss_count += 1
+
+        if is_main_process():
+            avg_loss = epoch_loss_sum / epoch_loss_count if epoch_loss_count > 0 else 0
+            print(f"Epoch {epoch}: Loss={avg_loss:.4f} LR={current_lr:.6f}")
 
         if epoch % 20 == 0:
             model.eval()
