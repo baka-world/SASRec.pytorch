@@ -373,7 +373,7 @@ class TiSASRec(torch.nn.Module):
 
         # 绝对位置嵌入
         positions = np.tile(np.arange(log_seqs.shape[1]), [log_seqs.shape[0], 1])
-        positions = torch.LongTensor(positions).to(self.dev)
+        positions = torch.tensor(positions, dtype=torch.long, device=self.dev)
         abs_pos_K = self.abs_pos_K_emb(positions)
         abs_pos_V = self.abs_pos_V_emb(positions)
         abs_pos_K = self.abs_pos_K_emb_dropout(abs_pos_K)
