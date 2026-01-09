@@ -888,3 +888,106 @@ def evaluate_valid_tisasrec(model, dataset, args):
             sys.stdout.flush()
 
     return NDCG / valid_user, HT / valid_user
+
+
+def compute_validation_loss(model, dataset, args, use_time=False):
+    """
+    计算验证集loss（用于早停判断）
+    
+    Args:
+        model: 训练好的模型
+        dataset: 数据集 [user_train, user_valid, user_test, usernum, itemnum]
+        args: 参数
+        use_time: 是否使用时序信息
+    
+    Returns:
+        float: 验证集平均loss
+    """
+    [user_train, user_valid, user_test, usernum, itemnum] = dataset
+    model.eval()
+    
+    total_loss = 0.0
+    count = 0
+    
+    with torch.no_grad():
+        for u in user_train:
+            # 构建序列
+            seq = np.zeros([args.maxlen], dtype=np.int32)
+            idx = args.maxlen - 1
+            for i in reversed(user_train[u][:-1]):
+                seq[idx] = i
+                idx -= 1
+                if idx == 0:
+                    break
+            
+            # 正样本
+            pos = np.zeros([args.maxlen], dtype=np.int32)
+            pos[idx+1:] = [i for i in user_train[u][idx+1:]]
+            
+            # 负样本
+            neg = np.zeros([args.maxlen], dtype=np.int32)
+            for idx_i, i_pos in enumerate(pos):
+                if i_pos != 0:
+                    while True:
+                        neg_item = np.random.randint(1, itemnum + 1)
+                        if neg_item not in user_train[u]:
+                            neg[idx_i] = neg_item
+                            break
+            
+            # 计算loss
+            if use_time:
+                time_mat = compute_time_matrix(np.array([u]), args.maxlen, args.time_span, user_train)
+                pos_logits, neg_logits = model(
+                    np.array([u]), seq, time_mat, pos, neg
+                )
+            else:
+                pos_logits, neg_logits = model(
+                    np.array([u]), seq, pos, neg
+                )
+            
+            # 计算BCE loss
+            indices = np.where(pos != 0)
+            if len(indices[0]) > 0:
+                pos_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                    pos_logits[indices], torch.ones_like(pos_logits[indices])
+                )
+                neg_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                    neg_logits[indices], torch.zeros_like(neg_logits[indices])
+                )
+                total_loss += (pos_loss + neg_loss).item()
+                count += 1
+    
+    model.train()
+    return total_loss / max(count, 1) if count > 0 else 0.0
+
+
+def compute_time_matrix(users, maxlen, time_span, user_train):
+    """
+    为指定用户计算时间间隔矩阵
+    
+    Args:
+        users: 用户ID数组
+        maxlen: 序列最大长度
+        time_span: 时间跨度数
+        user_train: 训练数据
+    
+    Returns:
+        numpy.ndarray: 时间间隔矩阵
+    """
+    batch_size = users.shape[0]
+    time_mat = np.zeros([batch_size, maxlen, maxlen], dtype=np.int32)
+    
+    for b in range(batch_size):
+        u = users[b]
+        user_items = user_train[u]
+        
+        for i in range(len(user_items)):
+            for j in range(len(user_items)):
+                if i < maxlen and j < maxlen:
+                    time_diff = abs(i - j)
+                    if time_diff <= time_span:
+                        time_mat[b, i, j] = time_diff
+                    else:
+                        time_mat[b, i, j] = time_span
+    
+    return time_mat

@@ -119,12 +119,24 @@ parser.add_argument("--hidden_units", default=50, type=int, help="隐藏层维�
 parser.add_argument(
     "--num_blocks", default=2, type=int, help="Transformer编码器块的数量"
 )
-parser.add_argument("--num_epochs", default=1000, type=int, help="训练轮数")
+parser.add_argument("--num_epochs", default=300, type=int, help="训练轮数")
 parser.add_argument(
     "--num_heads", default=2, type=int, help="多头注意力机制中注意力头的数量"
 )
 parser.add_argument("--dropout_rate", default=0.2, type=float, help="Dropout比率")
 parser.add_argument("--l2_emb", default=0.0, type=float, help="嵌入层的L2正则化系数")
+parser.add_argument(
+    "--early_stop_patience",
+    default=3,
+    type=int,
+    help="早停耐心值，连续多少次loss改善不足阈值则停止",
+)
+parser.add_argument(
+    "--early_stop_threshold",
+    default=0.001,
+    type=float,
+    help="Loss改善阈值，小于此值认为无改善",
+)
 parser.add_argument("--device", default="cuda", type=str, help="训练设备")
 parser.add_argument(
     "--inference_only", default=False, type=str2bool, help="是否仅进行推理"
@@ -385,6 +397,12 @@ if __name__ == "__main__":
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
 
+    # 早停跟踪变量
+    loss_history = []  # 训练loss历史（每10个epoch记录一次平均loss）
+    val_loss_history = []  # 验证loss历史（每20个epoch记录）
+    early_stop_counter = 0  # 早停计数器
+    epoch_losses = []  # 当前epoch的所有batch loss
+
     T = 0.0
     t0 = time.time()
 
@@ -447,12 +465,73 @@ if __name__ == "__main__":
 
             total_step += 1
 
+            epoch_losses.append(loss.item())
+
             if is_main_process():
                 print(
                     "loss in epoch {} iteration {}: {:.4f} lr: {:.6f}".format(
                         epoch, step, loss.item(), current_lr
                     )
                 )
+
+        if epoch % 10 == 0 and epoch >= 10:
+            avg_train_loss = sum(epoch_losses) / len(epoch_losses)
+            loss_history.append(avg_train_loss)
+            epoch_losses = []
+
+            if is_main_process():
+                print(
+                    f"[Loss History] Epoch {epoch}: Avg Train Loss = {avg_train_loss:.4f}"
+                )
+
+            if len(loss_history) >= 3:
+                recent_change = (loss_history[-1] - loss_history[-3]) / loss_history[-3]
+
+                if is_main_process():
+                    print(
+                        f"[Early Stop Check] Recent loss change: {recent_change * 100:.4f}%"
+                    )
+
+                if abs(recent_change) < args.early_stop_threshold:
+                    early_stop_counter += 1
+                    if is_main_process():
+                        print(
+                            f"[Early Stop] Patience counter: {early_stop_counter}/{args.early_stop_patience}"
+                        )
+                else:
+                    early_stop_counter = 0
+
+                if early_stop_counter >= args.early_stop_patience:
+                    if is_main_process():
+                        print(f"=" * 60)
+                        print(
+                            f"[Early Stop] 触发早停！连续{early_stop_counter}次loss改善不足{args.early_stop_threshold * 100}%"
+                        )
+                        print(
+                            f"最佳验证指标: NDCG@10={best_val_ndcg:.4f}, HR@10={best_val_hr:.4f}"
+                        )
+                        print(
+                            f"最佳测试指标: NDCG@10={best_test_ndcg:.4f}, HR@10={best_test_hr:.4f}"
+                        )
+                        print(f"=" * 60)
+
+                    folder = output_dir
+                    fname = "model.early_stop.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth"
+                    fname = fname.format(
+                        epoch,
+                        args.lr,
+                        args.num_blocks,
+                        args.num_heads,
+                        args.hidden_units,
+                        args.maxlen,
+                    )
+                    torch.save(model.state_dict(), os.path.join(folder, fname))
+
+                    sampler.close()
+                    cleanup_distributed()
+                    if is_main_process():
+                        print("Done (Early Stop)")
+                    exit(0)
 
         if epoch % 20 == 0:
             model.eval()
@@ -471,6 +550,23 @@ if __name__ == "__main__":
                     " epoch:%d, time: %f(s), valid (NDCG@10: %.4f, HR@10: %.4f), test (NDCG@10: %.4f, HR@10: %.4f)"
                     % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1])
                 )
+
+            # 计算验证集loss（用于早停判断）
+            try:
+                if args.use_time or not args.no_time:
+                    val_loss = compute_validation_loss(
+                        model, dataset, args, use_time=True
+                    )
+                else:
+                    val_loss = compute_validation_loss(
+                        model, dataset, args, use_time=False
+                    )
+                val_loss_history.append(val_loss)
+                if is_main_process():
+                    print(f"[Val Loss] Epoch {epoch}: Val Loss = {val_loss:.4f}")
+            except Exception as e:
+                if is_main_process():
+                    print(f"[Val Loss] Failed to compute val loss: {e}")
 
             if (
                 t_valid[0] > best_val_ndcg
