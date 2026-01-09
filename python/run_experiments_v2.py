@@ -199,6 +199,12 @@ class ExperimentManager:
         exp.status = Status.RUNNING
         exp.start_time = time.time()
 
+        # 清理旧的输出目录（如果存在）
+        output_dir = exp.output_dir
+        if output_dir and os.path.isdir(output_dir):
+            print(f"{Colors.YELLOW}清理旧输出目录: {output_dir}{Colors.ENDC}")
+            shutil.rmtree(output_dir)
+
         # 创建日志文件
         with open(exp.log_file, "w") as f:
             f.write(f"实验: {exp.name} ")
