@@ -384,6 +384,12 @@ if __name__ == "__main__":
             find_unused_parameters=True,
         )
 
+    if is_main_process():
+        print(
+            f"[Early Stop] 配置: patience={args.early_stop_patience}, threshold={args.early_stop_threshold * 100}%, 检查间隔=10 epochs"
+        )
+        print("-" * 60)
+
     epoch_start_idx = 1
     if args.state_dict_path is not None:
         try:
@@ -531,17 +537,19 @@ if __name__ == "__main__":
 
                         if is_main_process():
                             print(
-                                f"[Early Stop Check] Recent loss change: {recent_change * 100:.4f}%"
+                                f"[Early Stop Check] Epoch {epoch}: Loss变化={recent_change * 100:.2f}% (阈值: {args.early_stop_threshold * 100}%)"
                             )
 
                         if abs(recent_change) < args.early_stop_threshold:
                             early_stop_counter += 1
                             if is_main_process():
                                 print(
-                                    f"[Early Stop] Patience counter: {early_stop_counter}/{args.early_stop_patience}"
+                                    f"[Early Stop] ⚠️  连续 {early_stop_counter}/{args.early_stop_patience} 次无改善"
                                 )
                         else:
                             early_stop_counter = 0
+                            if is_main_process():
+                                print(f"[Early Stop] ✓ Loss正在改善，重置计数器")
 
                         if early_stop_counter >= args.early_stop_patience:
                             if is_main_process():
