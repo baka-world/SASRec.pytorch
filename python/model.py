@@ -367,20 +367,24 @@ class TiSASRec(torch.nn.Module):
             log_feats: 序列的特征表示，形状为 (batch_size, seq_len, hidden_units)
         """
         # 物品嵌入
-        seqs = self.item_emb(torch.tensor(log_seqs, dtype=torch.long, device=self.dev))
+        seqs = self.item_emb(
+            torch.as_tensor(log_seqs, dtype=torch.long, device=self.dev)
+        )
         seqs *= self.item_emb.embedding_dim**0.5
         seqs = self.item_emb_dropout(seqs)
 
         # 绝对位置嵌入
         positions = np.tile(np.arange(log_seqs.shape[1]), [log_seqs.shape[0], 1])
-        positions = torch.tensor(positions, dtype=torch.long, device=self.dev)
+        positions = torch.as_tensor(positions, dtype=torch.long, device=self.dev)
         abs_pos_K = self.abs_pos_K_emb(positions)
         abs_pos_V = self.abs_pos_V_emb(positions)
         abs_pos_K = self.abs_pos_K_emb_dropout(abs_pos_K)
         abs_pos_V = self.abs_pos_V_emb_dropout(abs_pos_V)
 
         # 时间矩阵嵌入（核心创新）
-        time_matrices = torch.tensor(time_matrices, dtype=torch.long, device=self.dev)
+        time_matrices = torch.as_tensor(
+            time_matrices, dtype=torch.long, device=self.dev
+        )
         time_matrix_K = self.time_matrix_K_emb(time_matrices)
         time_matrix_V = self.time_matrix_V_emb(time_matrices)
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
@@ -474,10 +478,10 @@ class TiSASRec(torch.nn.Module):
 
         # 获取正负样本的嵌入向量
         pos_embs = self.item_emb(
-            torch.tensor(pos_seqs, dtype=torch.long, device=self.dev)
+            torch.as_tensor(pos_seqs, dtype=torch.long, device=self.dev)
         )
         neg_embs = self.item_emb(
-            torch.tensor(neg_seqs, dtype=torch.long, device=self.dev)
+            torch.as_tensor(neg_seqs, dtype=torch.long, device=self.dev)
         )
 
         # 计算正负样本与序列表示的点积得分
@@ -509,7 +513,7 @@ class TiSASRec(torch.nn.Module):
 
         # 获取候选物品的嵌入向量
         item_embs = self.item_emb(
-            torch.tensor(item_indices, dtype=torch.long, device=self.dev)
+            torch.as_tensor(item_indices, dtype=torch.long, device=self.dev)
         )
 
         # 计算候选物品与用户兴趣表示的点积得分
@@ -602,7 +606,9 @@ class SASRec(torch.nn.Module):
             log_feats: 序列的特征表示，形状为 (batch_size, seq_len, hidden_units)
         """
         # 物品ID转换为嵌入向量
-        seqs = self.item_emb(torch.tensor(log_seqs, dtype=torch.long, device=self.dev))
+        seqs = self.item_emb(
+            torch.as_tensor(log_seqs, dtype=torch.long, device=self.dev)
+        )
         # 缩放嵌入向量（与Transformer原论文一致）
         seqs *= self.item_emb.embedding_dim**0.5
 
@@ -611,7 +617,7 @@ class SASRec(torch.nn.Module):
         # 将padding位置的位置嵌入设为0
         poss = poss * (log_seqs.cpu().numpy() != 0)
         # 添加位置嵌入
-        seqs += self.pos_emb(torch.tensor(poss, dtype=torch.long, device=self.dev))
+        seqs += self.pos_emb(torch.as_tensor(poss, dtype=torch.long, device=self.dev))
         seqs = self.emb_dropout(seqs)
 
         # 创建因果注意力掩码，防止信息泄露
@@ -681,10 +687,10 @@ class SASRec(torch.nn.Module):
 
         # 获取正负样本的嵌入向量
         pos_embs = self.item_emb(
-            torch.tensor(pos_seqs, dtype=torch.long, device=self.dev)
+            torch.as_tensor(pos_seqs, dtype=torch.long, device=self.dev)
         )
         neg_embs = self.item_emb(
-            torch.tensor(neg_seqs, dtype=torch.long, device=self.dev)
+            torch.as_tensor(neg_seqs, dtype=torch.long, device=self.dev)
         )
 
         # 计算正负样本与序列表示的点积得分
@@ -717,7 +723,7 @@ class SASRec(torch.nn.Module):
 
         # 获取候选物品的嵌入向量
         item_embs = self.item_emb(
-            torch.tensor(item_indices, dtype=torch.long, device=self.dev)
+            torch.as_tensor(item_indices, dtype=torch.long, device=self.dev)
         )
 
         # 计算候选物品与用户兴趣表示的点积得分
