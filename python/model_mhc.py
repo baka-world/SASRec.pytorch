@@ -312,7 +312,7 @@ class mHCResidual(torch.nn.Module):
             输出张量，形状为 (batch_size, seq_len, C)
         """
         if self.mhc_no_amp and torch.cuda.is_available():
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast("cuda", enabled=False):
                 return self._forward_impl(x, function_output)
         return self._forward_impl(x, function_output)
 
