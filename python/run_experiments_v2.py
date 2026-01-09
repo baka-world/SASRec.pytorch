@@ -252,6 +252,11 @@ class ExperimentManager:
 
     def run(self, max_concurrent: int = 4):
         """运行所有实验"""
+        # 注册信号处理
+        import signal
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        
         self.clear_screen()
         self.print_header()
 
@@ -295,6 +300,45 @@ class ExperimentManager:
                     time.sleep(10)
                     self.print_status()
 
+    def cleanup_all(self):
+        """停止所有实验并清理GPU显存"""
+        print(f"{Colors.YELLOW}正在停止所有实验...{Colors.ENDC}")
+        
+        # 停止所有运行的实验
+        for gpu_id, exp in list(self.running.items()):
+            if exp:
+                print(f"  停止实验: {exp.name} (GPU {gpu_id})")
+                exp.status = Status.CANCELLED
+                exp.end_time = time.time()
+        
+        # 清空运行列表
+        self.running.clear()
+        
+        # 尝试释放GPU显存
+        try:
+            result = subprocess.run(
+                ["nvidia-smi"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            print(f"{Colors.CYAN}GPU 状态:{Colors.ENDC}")
+            for line in result.stdout.split('\n'):
+                if 'Tesla' in line or 'MiB' in line:
+                    print(f"  {line}")
+        except:
+            pass
+        
+        print(f"{Colors.GREEN}已停止所有实验{Colors.ENDC}")
+    
+    def signal_handler(self, signum, frame):
+        """信号处理：Ctrl+C 优雅退出"""
+        print(f"{Colors.RED}收到终止信号，正在清理...{Colors.ENDC}")
+        self.cleanup_all()
+        self.save_results()
+        print(f"{Colors.YELLOW}实验结果已保存到: {self.results_file}{Colors.ENDC}")
+        sys.exit(0)
+    
     def clear_screen(self):
         os.system("cls" if os.name == "nt" else "clear")
 
