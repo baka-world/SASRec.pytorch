@@ -17,6 +17,7 @@ import argparse
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
+from rich import print as rprint
 from enum import Enum
 import shutil
 
@@ -180,10 +181,10 @@ class ExperimentManager:
 
         # 创建日志文件
         with open(exp.log_file, "w") as f:
-            f.write(f"实验: {exp.name}\n")
-            f.write(f"GPU: {exp.gpu}\n")
-            f.write(f"命令: {exp.cmd}\n")
-            f.write(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"实验: {exp.name} ")
+            f.write(f"GPU: {exp.gpu} ")
+            f.write(f"命令: {exp.cmd} ")
+            f.write(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ")
             f.write("=" * 60 + "\n\n")
 
         # 启动进程
@@ -300,7 +301,7 @@ class ExperimentManager:
                 pending = [e for e in self.experiments if e.status == Status.PENDING]
                 if pending:
                     print(
-                        f"\n{Colors.YELLOW}等待中... ({len(pending)}个实验){Colors.ENDC}"
+                        f"{Colors.YELLOW}等待中... ({len(pending)}个实验){Colors.ENDC}"
                     )
                     time.sleep(5)
                     self.print_status()
@@ -417,63 +418,105 @@ class ExperimentManager:
         print("╚══════════════════════════════════════════════════════════════╝")
         print(f"{Colors.ENDC}")
 
-    def print_status(self):
-        """打印当前状态"""
-        self.clear_screen()
-        self.print_header()
+    def get_latest_output(self, exp: Experiment) -> str:
+        """获取实验的最新输出行"""
+        if not exp.log_file or not os.path.exists(exp.log_file):
+            return ""
+        try:
+            with open(exp.log_file, 'r') as f:
+                lines = f.readlines()
+                for line in reversed(lines[-10:]):
+                    line = line.strip()
+                    if line and not line.startswith('实验:') and not line.startswith('GPU:') and not line.startswith('命令:') and not line.startswith('开始时间:') and not line.startswith('='):
+                        return line[:60] + ("..." if len(line) > 60 else "")
+                return ""
+        except:
+            return ""
 
-        # GPU状态
-        print(f"{Colors.CYAN}{Colors.BOLD}GPU 状态:{Colors.ENDC}")
-        print(
-            "┌──────┬─────────────────────────────┬─────────────┬──────────────────────────┐"
-        )
-        print(
-            "│ GPU  │ 实验                         │ 状态        │ 显存     进度           │"
-        )
-        print(
-            "├──────┼─────────────────────────────┼─────────────┼──────────────────────────┤"
-        )
+    def print_status(self):
+        """打印当前状态（使用rich美化输出）"""
+        from rich.table import Table
+        from rich.text import Text
+        from rich.panel import Panel
+        from rich.box import ROUNDED
+
+        self.clear_screen()
+
+        # 标题
+        rprint(f"[bold magenta]╔══════════════════════════════════════════════════════════════╗[/]")
+        rprint(f"[bold magenta]║[/]  [bold white]SASRec/TiSASRec 实验管理器[/]                           [bold magenta]║[/]")
+        rprint(f"[bold magenta]║[/]  [dim]Experiment Manager for SASRec/TiSASRec[/]                  [bold magenta]║[/]")
+        rprint(f"[bold magenta]╠══════════════════════════════════════════════════════════════╣[/]")
+        rprint(f"[bold magenta]║[/]  实验数量: [cyan]{len(self.experiments)}[/]                                              [bold magenta]║[/]")
+        rprint(f"[bold magenta]║[/]  开始时间: [cyan]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]                         [bold magenta]║[/]")
+        rprint(f"[bold magenta]╚══════════════════════════════════════════════════════════════╝[/]")
+
+        # 实验状态表格
+        table = Table(box=ROUNDED, show_header=True, header_style="bold cyan")
+        table.add_column("GPU", width=5, justify="center")
+        table.add_column("实验", width=32)
+        table.add_column("最新输出", width=32)
+        table.add_column("显存", width=12, justify="right")
+        table.add_column("运行时", width=10, justify="right")
 
         for gpu_id in range(4):
-            if gpu_id in self.running:
-                exp = self.running[gpu_id]
-                mem = self.get_gpu_memory(gpu_id)
-                mem_str = f"{mem/1024:.1f}GB" if mem else "?"
-                status = exp.status.value
-                duration = (
-                    f"{time.time() - exp.start_time:.0f}s" if exp.start_time else ""
-                )
-                name = exp.name[:27] + "..." if len(exp.name) > 30 else exp.name
-                print(
-                    f"│ {gpu_id}   │ {name:<29} │ {status:<11} │ {mem_str:<9} {duration:<8} │"
-                )
+            exps = self.running.get(gpu_id, [])
+            mem = self.get_gpu_memory(gpu_id)
+            mem_str = f"{mem/1024:.1f}GB"
+            
+            if exps:
+                for i, exp in enumerate(exps):
+                    name = exp.name[:30] + "..." if len(exp.name) > 30 else exp.name
+                    latest = self.get_latest_output(exp) or "-"
+                    latest = latest[:30] + ("..." if len(latest) > 30 else "")
+                    duration = f"{time.time() - exp.start_time:.0f}s" if exp.start_time else "-"
+                    
+                    gpu_prefix = str(gpu_id) if i == 0 else " "
+                    table.add_row(gpu_prefix, name, latest, mem_str, duration)
             else:
-                print(f"│ {gpu_id}   │ {'空闲':<29} │ {'🟢 可用':<11} │ {'-':<21} │")
+                table.add_row(str(gpu_id), "[dim]空闲[/]", "-", mem_str, "-")
 
-        print(
-            "└──────┴─────────────────────────────┴─────────────┴──────────────────────────┘"
-        )
+        rprint("")
+        rprint("[bold cyan]运行中的实验:[/]")
+        rprint(table)
+
+        # GPU显存摘要
+        rprint("")
+        rprint("[bold cyan]显存使用:[/]", end="")
+        for gpu_id in range(4):
+            mem = self.get_gpu_memory(gpu_id)
+            exps = self.running.get(gpu_id, [])
+            count = len(exps)
+            if count > 0:
+                rprint(f"  [green]GPU{gpu_id}:[/] {mem/1024:.1f}GB ([yellow]{count}实验[/])", end="")
+            else:
+                rprint(f"  GPU{gpu_id}: {mem/1024:.1f}GB", end="")
+        rprint("")
+
+        # 进度统计
+        completed = [e for e in self.experiments if e.status == Status.COMPLETED]
+        failed = [e for e in self.experiments if e.status == Status.FAILED]
+        pending = [e for e in self.experiments if e.status == Status.PENDING]
+        total = len(self.experiments)
+        
+        rprint("")
+        rprint(f"[bold]进度:[/] [green]{completed}[/]/{total}完成", end="")
+        if failed:
+            rprint(f"  [red]X {len(failed)}失败[/]", end="")
+        if pending:
+            rprint(f"  [yellow]O {len(pending)}等待[/]", end="")
+        
+        if completed:
+            best = max((e.ndcg10 for e in completed if e.ndcg10), default=0)
+            if best > 0:
+                rprint(f"  [bold]Best NDCG:[/] [green]{best:.4f}[/]")
+        rprint("")
 
         # 等待中的实验
-        pending = [e for e in self.experiments if e.status == Status.PENDING]
         if pending:
-            print(f"\n{Colors.YELLOW}等待中的实验 ({len(pending)}个):{Colors.ENDC}")
-            for exp in pending[:5]:
-                print(f"  • {exp.name} (GPU {exp.gpu})")
-            if len(pending) > 5:
-                print(f"  ... 还有 {len(pending) - 5} 个")
-
-        # 已完成的实验
-        completed = [e for e in self.experiments if e.status == Status.COMPLETED]
-        if completed:
-            print(
-                f"\n{Colors.GREEN}已完成 ({len(completed)}/{len(self.experiments)}):{Colors.ENDC}"
-            )
-            best_ndcg = max((e.ndcg10 for e in completed if e.ndcg10), default=0)
-            for exp in completed:
-                ndcg_str = f"NDCG@{exp.ndcg10:.4f}" if exp.ndcg10 else "NDCG:?   "
-                hr_str = f"HR@{exp.hr10:.4f}" if exp.hr10 else "HR:?   "
-                print(f"  ✓ {exp.name:<30} {ndcg_str} {hr_str}")
+            names = [e.name for e in pending[:12]]
+            rprint(f"")
+            rprint(f"[bold yellow]等待 ({len(pending)}个):[/] " + ", ".join(names) + ("..." if len(pending) > 12 else ""))
 
     def print_final_results(self):
         """打印最终结果"""
@@ -485,7 +528,7 @@ class ExperimentManager:
         )
         print("║                      实验结果汇总                            ║")
         print(
-            f"╚══════════════════════════════════════════════════════════════╝{Colors.ENDC}\n"
+            f"╚══════════════════════════════════════════════════════════════╝{Colors.ENDC} "
         )
 
         # 按NDCG排序
@@ -527,10 +570,10 @@ class ExperimentManager:
         with open(report_file, "w", encoding="utf-8") as f:
             f.write("SASRec/TiSASRec 实验报告\n")
             f.write("=" * 60 + "\n")
-            f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"实验总数: {len(self.experiments)}\n")
+            f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ")
+            f.write(f"实验总数: {len(self.experiments)} ")
             f.write(
-                f"成功数量: {len([e for e in self.experiments if e.status == Status.COMPLETED])}\n\n"
+                f"成功数量: {len([e for e in self.experiments if e.status == Status.COMPLETED])}\n "
             )
 
             f.write("排名  实验名称                      NDCG@10   HR@10      耗时\n")
@@ -543,15 +586,15 @@ class ExperimentManager:
                     if exp.end_time and exp.start_time
                     else "N/A"
                 )
-                f.write(f"{i:<5} {exp.name:<30} {ndcg}   {hr}   {duration}\n")
+                f.write(f"{i:<5} {exp.name:<30} {ndcg}   {hr}   {duration} ")
 
             f.write("\n最佳配置:\n")
             if sorted_exps:
-                f.write(f"  名称: {sorted_exps[0].name}\n")
-                f.write(f"  NDCG@10: {sorted_exps[0].ndcg10}\n")
-                f.write(f"  HR@10: {sorted_exps[0].hr10}\n")
+                f.write(f"  名称: {sorted_exps[0].name} ")
+                f.write(f"  NDCG@10: {sorted_exps[0].ndcg10} ")
+                f.write(f"  HR@10: {sorted_exps[0].hr10} ")
 
-        print(f"\n报告已保存: {report_file}")
+        print(f"报告已保存: {report_file}")
 
 
 # 实验配置定义
@@ -727,7 +770,7 @@ def main():
         manager.add_experiment(name, gpu, cmd)
         print(f"  ✓ {name} (GPU {gpu})")
 
-    print(f"\n共 {len(experiments)} 个实验")
+    print(f"共 {len(experiments)} 个实验")
     print("开始运行...\n")
 
     # 运行
