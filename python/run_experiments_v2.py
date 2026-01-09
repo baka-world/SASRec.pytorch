@@ -321,35 +321,51 @@ class ExperimentManager:
         # 清空运行列表
         self.running.clear()
         
-        # 查找并终止所有Python进程（包括残留）
+        # 查找并终止所有Python进程（包括残留）- 多次尝试确保清理干净
         print(f"{Colors.CYAN}清理残留进程...{Colors.ENDC}")
+        
+        for attempt in range(3):  # 最多尝试3次
+            killed_any = False
+            try:
+                result = subprocess.run(
+                    ["ps", "aux"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                for line in result.stdout.split("\n"):
+                    if 'python' in line and 'grep' not in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                pid = int(parts[1])
+                                if pid > 0 and '/usr/lib/xorg/Xorg' not in line:
+                                    subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+                                    print(f"  已终止 PID: {pid}")
+                                    killed_any = True
+                            except:
+                                pass
+            except Exception as e:
+                print(f"  清理尝试 {attempt+1} 失败: {e}")
+            
+            if killed_any:
+                time.sleep(1)  # 等待进程终止
+            else:
+                break  # 没有找到进程，退出
+        
+        # 再次强制检查nvidia-smi中的进程
         try:
             result = subprocess.run(
-                ["ps", "aux"],
+                ["nvidia-smi"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
-            killed = False
             for line in result.stdout.split("\n"):
-                if 'python' in line and 'grep' not in line:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        try:
-                            pid = int(parts[1])
-                            if pid > 0 and '/usr/lib/xorg/Xorg' not in line:
-                                subprocess.run(["kill", "-9", str(pid)], capture_output=True)
-                                print(f"  已终止 PID: {pid}")
-                                killed = True
-                        except:
-                            pass
-            if not killed:
-                print("  无需清理")
-        except Exception as e:
-            print(f"  清理失败: {e}")
-        
-        # 等待进程终止
-        time.sleep(2)
+                if 'python' in line:
+                    print(f"  [bold red]警告: 仍有Python进程: {line.strip()}[/bold red]")
+        except:
+            pass
         
         # 显示GPU状态
         print(f"{Colors.CYAN}GPU 状态:{Colors.ENDC}")
@@ -366,7 +382,7 @@ class ExperimentManager:
         except:
             pass
         
-        print(f"{Colors.GREEN}已停止所有实验并清理显存{Colors.ENDC}")
+        print(f"{Colors.GREEN}已停止所有实验{Colors.ENDC}")
         
         # 停止所有运行的实验
         for gpu_id, exps in list(self.running.items()):
