@@ -516,7 +516,7 @@ class ExperimentManager:
         try:
             with open(exp.log_file, "r") as f:
                 lines = f.readlines()
-                for line in reversed(lines[-10:]):
+                for line in reversed(lines[-20:]):
                     line = line.strip()
                     if (
                         line
@@ -526,7 +526,7 @@ class ExperimentManager:
                         and not line.startswith("开始时间:")
                         and not line.startswith("=")
                     ):
-                        return line[:60] + ("..." if len(line) > 60 else "")
+                        return line[:100] + ("..." if len(line) > 100 else "")
                 return ""
         except:
             return ""
@@ -566,9 +566,9 @@ class ExperimentManager:
         # 实验状态表格
         table = Table(box=ROUNDED, show_header=True, header_style="bold cyan")
         table.add_column("GPU", width=5, justify="center")
-        table.add_column("实验", width=32)
-        table.add_column("最新输出", width=32)
-        table.add_column("显存", width=12, justify="right")
+        table.add_column("实验", width=28)
+        table.add_column("最新输出", width=48)
+        table.add_column("显存", width=10, justify="right")
         table.add_column("运行时", width=10, justify="right")
 
         for gpu_id in range(NUM_GPUS):
@@ -578,9 +578,9 @@ class ExperimentManager:
 
             if exps:
                 for i, exp in enumerate(exps):
-                    name = exp.name[:30] + "..." if len(exp.name) > 30 else exp.name
+                    name = exp.name[:26] + "..." if len(exp.name) > 26 else exp.name
                     latest = self.get_latest_output(exp) or "-"
-                    latest = latest[:30] + ("..." if len(latest) > 30 else "")
+                    latest = latest[:46] + ("..." if len(latest) > 46 else "")
                     duration = (
                         f"{time.time() - exp.start_time:.0f}s"
                         if exp.start_time
