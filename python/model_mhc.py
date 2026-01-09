@@ -429,7 +429,7 @@ class TiSASRec(torch.nn.Module):
         self.time_span = time_span
         self.dev = args.device
 
-        self.use_mhc = getattr(args, "use_mhc", False)
+        self.use_mhc = not getattr(args, "no_mhc", False)
         self.mhc_expansion_rate = getattr(args, "mhc_expansion_rate", 4)
         self.mhc_no_amp = getattr(args, "mhc_no_amp", False)
         self.norm_first = getattr(args, "norm_first", False)
@@ -622,7 +622,7 @@ class SASRec(torch.nn.Module):
         self.dev = args.device
         self.norm_first = args.norm_first
 
-        self.use_mhc = getattr(args, "use_mhc", False)
+        self.use_mhc = not getattr(args, "no_mhc", False)
         self.mhc_expansion_rate = getattr(args, "mhc_expansion_rate", 4)
         self.mhc_no_amp = getattr(args, "mhc_no_amp", False)
 
