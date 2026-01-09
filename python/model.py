@@ -390,6 +390,7 @@ class TiSASRec(torch.nn.Module):
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
         time_matrix_V = self.time_matrix_V_dropout(time_matrix_V)
 
+        log_seqs = torch.as_tensor(log_seqs, dtype=torch.long, device=self.dev)
         # 掩码：标记padding位置（物品ID为0）
         timeline_mask = (log_seqs == 0).to(self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1)
