@@ -909,6 +909,8 @@ def compute_validation_loss(model, dataset, args, use_time=False):
     total_loss = 0.0
     count = 0
 
+    device = next(model.parameters()).device
+
     with torch.no_grad():
         for u in user_train:
             # 构建序列
@@ -946,11 +948,19 @@ def compute_validation_loss(model, dataset, args, use_time=False):
             # 计算BCE loss
             indices = np.where(pos != 0)
             if len(indices[0]) > 0:
+                pos_logits_tensor = torch.as_tensor(
+                    pos_logits, dtype=torch.float32, device=device
+                )
+                neg_logits_tensor = torch.as_tensor(
+                    neg_logits, dtype=torch.float32, device=device
+                )
                 pos_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                    pos_logits[indices], torch.ones_like(pos_logits[indices])
+                    pos_logits_tensor[indices],
+                    torch.ones(len(indices[0]), dtype=torch.float32, device=device),
                 )
                 neg_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                    neg_logits[indices], torch.zeros_like(neg_logits[indices])
+                    neg_logits_tensor[indices],
+                    torch.zeros(len(indices[0]), dtype=torch.float32, device=device),
                 )
                 total_loss += (pos_loss + neg_loss).item()
                 count += 1
