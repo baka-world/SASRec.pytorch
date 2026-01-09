@@ -181,7 +181,7 @@ class ExperimentManager:
             f.write("=" * 60 + "\n\n")
 
         # 启动进程
-        full_cmd = f"cuda:{exp.gpu} python main.py {exp.cmd}"
+        full_cmd = f"python main.py --device=cuda:{exp.gpu} {exp.cmd}"
         process = subprocess.Popen(
             full_cmd,
             shell=True,
