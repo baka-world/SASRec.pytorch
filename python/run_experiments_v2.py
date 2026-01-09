@@ -129,7 +129,7 @@ class ExperimentManager:
         return exp
 
     def get_gpu_memory(self, gpu_id: int) -> Optional[float]:
-        """获取GPU显存使用量(MiB)，返回0表示空闲GPU"""
+        """获取GPU显存使用量(MiB)，返回None表示检测失败"""
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader"],
@@ -139,13 +139,12 @@ class ExperimentManager:
             )
             lines = result.stdout.strip().split("\n")
             if gpu_id < len(lines):
-                # 格式: "3543 MiB"
                 line = lines[gpu_id].strip()
-                value = line.split()[0] if line else "0"
-                return float(value)
-            return 0
+                value = line.split()[0] if line else None
+                return float(value) if value else None
+            return None
         except:
-            return 0
+            return None
 
     def auto_assign_gpu(self, exp: Experiment) -> int:
         """自动分配GPU（尝试所有GPU，找到显存足够的）
@@ -361,7 +360,7 @@ class ExperimentManager:
                 running_exps = self.get_experiments_on_gpu(gpu_id)
 
                 if running_exps:
-                    # 检查最早开始的任务是否已经输出有效信息
+                    # 有任务在运行，检查是否准备好接收新任务
                     earliest_exp = min(running_exps, key=lambda e: e.start_time or 0)
                     if self.is_experiment_ready_for_next(earliest_exp):
                         # 该 GPU 可以开始下一个任务
@@ -370,11 +369,16 @@ class ExperimentManager:
                         gpu_ready_for_next[gpu_id] = False
                         continue
                 else:
-                    # 首次分配：检查显存是否足够
+                    # 首次分配：检查显存是否足够且没有运行任务
                     mem = self.get_gpu_memory(gpu_id)
-                    if mem >= 30000:
+                    if mem is None or mem >= 30000:
                         continue
                     gpu_ready_for_next[gpu_id] = True
+
+                # 如果 GPU 上已有 1 个或更多任务，不再分配新任务（等待任务完成或输出 loss）
+                running_count = len(self.get_experiments_on_gpu(gpu_id))
+                if running_count >= 1:
+                    continue
 
                 if not gpu_ready_for_next.get(gpu_id, True):
                     continue
