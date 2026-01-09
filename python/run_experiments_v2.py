@@ -341,26 +341,6 @@ class ExperimentManager:
         while True:
             started_any = False
 
-            for gpu_id in range(NUM_GPUS):
-                # 检查该 GPU 是否可以接收新任务
-                if not gpu_ready_for_next.get(gpu_id, True):
-                    continue
-
-                # 查找该 GPU 上运行中的实验
-                running_exps = self.get_experiments_on_gpu(gpu_id)
-
-                if running_exps:
-                    # 检查是否已经有任务在运行，检查是否准备好接收新任务
-                    if len(running_exps) >= 1:
-                        # 只允许一个任务在运行，等完成后才能开始下一个
-                        gpu_ready_for_next[gpu_id] = False
-                        continue
-                    elif len(running_exps) == 0:
-                        gpu_ready_for_next[gpu_id] = True
-                else:
-                    # 没有运行中的任务，可以分配新任务
-                    gpu_ready_for_next[gpu_id] = True
-
             # 查找等待中的实验
             pending_exps = [e for e in self.experiments if e.status == Status.PENDING]
 
@@ -378,9 +358,6 @@ class ExperimentManager:
 
             # 为每个 GPU 尝试分配任务
             for gpu_id in range(NUM_GPUS):
-                if not gpu_ready_for_next.get(gpu_id, True):
-                    continue
-
                 running_exps = self.get_experiments_on_gpu(gpu_id)
 
                 if running_exps:
@@ -398,6 +375,9 @@ class ExperimentManager:
                     if mem >= 30000:
                         continue
                     gpu_ready_for_next[gpu_id] = True
+
+                if not gpu_ready_for_next.get(gpu_id, True):
+                    continue
 
                 # 分配新任务给这个 GPU
                 for exp in pending_exps:
