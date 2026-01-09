@@ -192,6 +192,18 @@ parser.add_argument(
     default=False,
     help="启用自动混合精度训练（节省显存）",
 )
+parser.add_argument(
+    "--use_adamw",
+    action="store_true",
+    default=False,
+    help="使用AdamW替代Adam优化器",
+)
+parser.add_argument(
+    "--weight_decay",
+    default=0.01,
+    type=float,
+    help="AdamW的权重衰减系数（仅在使用AdamW时生效）",
+)
 
 parser.add_argument("--time_span", default=100, type=int, help="时间间分离散化范围")
 parser.add_argument(
@@ -395,7 +407,15 @@ if __name__ == "__main__":
             print("test (NDCG@10: %.4f, HR@10: %.4f)" % (t_test[0], t_test[1]))
 
     bce_criterion = torch.nn.BCEWithLogitsLoss()
-    adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
+    if args.use_adamw:
+        weight_decay = getattr(args, "weight_decay", 0.0)
+        adam_optimizer = torch.optim.AdamW(
+            model.parameters(), lr=args.lr, betas=(0.9, 0.98), weight_decay=weight_decay
+        )
+    else:
+        adam_optimizer = torch.optim.Adam(
+            model.parameters(), lr=args.lr, betas=(0.9, 0.98)
+        )
     use_amp = args.use_amp and torch.cuda.is_available()
     scaler = amp.GradScaler("cuda") if use_amp else None
 
