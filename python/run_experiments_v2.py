@@ -299,19 +299,22 @@ class ExperimentManager:
                 if not lines:
                     return False
 
-                content = "".join(lines).lower()
+                content = "".join(lines)
+                content_lower = content.lower()
 
-                has_loss = "loss" in content
-                has_lr = "lr" in content
-                has_epoch = "epoch" in content
-                has_early_stop = "early stop" in content
-                has_done = "best" in content and "model" in content
+                has_loss = "loss" in content_lower
+                has_lr = "lr=" in content_lower
+                has_epoch = "epoch" in content_lower
+                has_early_stop = "early stop" in content_lower
+                has_done = "best" in content_lower and "model" in content_lower
 
                 if has_done or has_early_stop:
                     return True
 
-                return has_loss or has_lr or has_epoch
-        except:
+                result = has_loss or has_lr or has_epoch
+                return result
+        except Exception as e:
+            print(f"  DEBUG: is_ready error: {e}")
             return False
 
     def get_experiments_on_gpu(self, gpu_id: int) -> List[Experiment]:
