@@ -14,6 +14,7 @@ import json
 import subprocess
 import threading
 import argparse
+import signal
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
@@ -206,7 +207,7 @@ class ExperimentManager:
             f.write(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ")
             f.write("=" * 60 + "\n\n")
 
-        # 启动进程
+        # 启动进程 - 使用 start_new_session 创建新进程组，方便清理
         full_cmd = f"python main.py --device=cuda:{exp.gpu} {exp.cmd}"
         process = subprocess.Popen(
             full_cmd,
@@ -214,6 +215,7 @@ class ExperimentManager:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            start_new_session=True,  # 创建新进程组
         )
 
         # 后台线程监控输出
@@ -404,11 +406,19 @@ class ExperimentManager:
                 time.sleep(2)
                 self.print_status()
 
+    def kill_process_group(self, pid: int) -> bool:
+        """杀死进程及其所有子进程"""
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            return True
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        return False
+
     def cleanup_all(self):
         """停止所有实验并清理GPU显存"""
         print(f"{Colors.YELLOW}正在停止所有实验...{Colors.ENDC}")
 
-        # 停止所有运行的实验
         for gpu_id, exps in list(self.running.items()):
             for exp in exps:
                 if exp:
@@ -416,86 +426,46 @@ class ExperimentManager:
                     exp.status = Status.CANCELLED
                     exp.end_time = time.time()
 
-        # 清空运行列表
         self.running.clear()
 
-        # 查找并终止所有Python进程（包括残留）- 多次尝试确保清理干净
         print(f"{Colors.CYAN}清理残留进程...{Colors.ENDC}")
 
-        for attempt in range(3):  # 最多尝试3次
-            killed_any = False
+        killed_pids = set()
+        for _ in range(3):
             try:
                 result = subprocess.run(
                     ["ps", "aux"], capture_output=True, text=True, timeout=10
                 )
                 for line in result.stdout.split("\n"):
-                    if "python" in line and "grep" not in line:
+                    if "python main.py" in line and "grep" not in line:
                         parts = line.split()
                         if len(parts) >= 2:
                             try:
                                 pid = int(parts[1])
-                                if pid > 0 and "/usr/lib/xorg/Xorg" not in line:
-                                    subprocess.run(
-                                        ["kill", "-9", str(pid)], capture_output=True
-                                    )
-                                    print(f"  已终止 PID: {pid}")
-                                    killed_any = True
+                                if pid > 0 and pid not in killed_pids:
+                                    killed_pids.add(pid)
+                                    if self.kill_process_group(pid):
+                                        print(f"  已终止进程组 PID: {pid}")
+                                    else:
+                                        subprocess.run(
+                                            ["kill", "-9", str(pid)],
+                                            capture_output=True,
+                                        )
+                                        print(f"  已终止 PID: {pid}")
                             except:
                                 pass
             except Exception as e:
-                print(f"  清理尝试 {attempt + 1} 失败: {e}")
+                print(f"  清理失败: {e}")
+                break
+            time.sleep(1)
 
-            if killed_any:
-                time.sleep(1)  # 等待进程终止
-            else:
-                break  # 没有找到进程，退出
-
-        # 再次强制检查nvidia-smi中的进程
-        try:
-            result = subprocess.run(
-                ["nvidia-smi"], capture_output=True, text=True, timeout=10
-            )
-            for line in result.stdout.split("\n"):
-                if "python" in line:
-                    print(
-                        f"  [bold red]警告: 仍有Python进程: {line.strip()}[/bold red]"
-                    )
-        except:
-            pass
-
-        # 显示GPU状态
         print(f"{Colors.CYAN}GPU 状态:{Colors.ENDC}")
         try:
             result = subprocess.run(
                 ["nvidia-smi"], capture_output=True, text=True, timeout=10
             )
             for line in result.stdout.split("\n"):
-                if "Tesla" in line or "MiB" in line:
-                    print(f"  {line}")
-        except:
-            pass
-
-        print(f"{Colors.GREEN}已停止所有实验{Colors.ENDC}")
-
-        # 停止所有运行的实验
-        for gpu_id, exps in list(self.running.items()):
-            for exp in exps:
-                if exp:
-                    print(f"  停止实验: {exp.name} (GPU {gpu_id})")
-                    exp.status = Status.CANCELLED
-                    exp.end_time = time.time()
-
-        # 清空运行列表
-        self.running.clear()
-
-        # 尝试释放GPU显存
-        try:
-            result = subprocess.run(
-                ["nvidia-smi"], capture_output=True, text=True, timeout=10
-            )
-            print(f"{Colors.CYAN}GPU 状态:{Colors.ENDC}")
-            for line in result.stdout.split("\n"):
-                if "Tesla" in line or "MiB" in line:
+                if "MiB" in line or "Tesla" in line or "GPU" in line:
                     print(f"  {line}")
         except:
             pass
