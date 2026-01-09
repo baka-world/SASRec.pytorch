@@ -276,12 +276,37 @@ class ExperimentManager:
         with open(self.results_file, "w") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
 
-    def run(self, max_concurrent: int = 4, gpu_startup_delay: float = 5.0):
+    def is_experiment_ready_for_next(self, exp: Experiment) -> bool:
+        """检查实验是否已经开始输出有效信息（loss/lr/epoch），可以开始下一个任务"""
+        if exp.status != Status.RUNNING:
+            return False
+
+        log_file = exp.log_file
+        if not log_file or not os.path.exists(log_file):
+            return False
+
+        try:
+            with open(log_file, "r") as f:
+                lines = f.readlines()
+                # 检查是否包含 loss、lr 或 epoch 信息
+                content = "".join(lines[-20:]).lower()
+                has_loss = "loss" in content
+                has_lr = "lr" in content
+                has_epoch = "epoch" in content
+                return has_loss or has_lr or has_epoch
+        except:
+            return False
+
+    def get_experiments_on_gpu(self, gpu_id: int) -> List[Experiment]:
+        """获取指定 GPU 上所有运行中的实验"""
+        return [e for e in self.running.get(gpu_id, []) if e.status == Status.RUNNING]
+
+    def run(self):
         """运行所有实验
 
-        Args:
-            max_concurrent: 最大并发实验数
-            gpu_startup_delay: 同一GPU上两次实验启动的最小间隔（秒），等待显存稳定
+        资源管理策略：
+        1. 首次分配：每个空闲 GPU 分配一个任务
+        2. 后续分配：等该 GPU 上的任务开始输出 loss/lr/epoch 后再分配新任务
         """
         import signal
 
@@ -291,34 +316,35 @@ class ExperimentManager:
         self.clear_screen()
         self.print_header()
 
-        last_experiment_time = {}  # 记录每个GPU上最后一次启动实验的时间
+        gpu_ready_for_next = {gpu_id: True for gpu_id in range(NUM_GPUS)}
 
         while True:
-            started = False
-            for exp in self.experiments:
-                if exp.status != Status.PENDING:
+            started_any = False
+
+            for gpu_id in range(NUM_GPUS):
+                # 检查该 GPU 是否可以接收新任务
+                if not gpu_ready_for_next.get(gpu_id, True):
                     continue
 
-                if exp.gpu == -1:
-                    exp.gpu = self.auto_assign_gpu(exp)
-                    if exp.gpu == -1:
+                # 查找该 GPU 上运行中的实验
+                running_exps = self.get_experiments_on_gpu(gpu_id)
+
+                if running_exps:
+                    # 检查是否已经有任务在运行，检查是否准备好接收新任务
+                    if len(running_exps) >= 1:
+                        # 只允许一个任务在运行，等完成后才能开始下一个
+                        gpu_ready_for_next[gpu_id] = False
                         continue
-                    print(
-                        f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}"
-                    )
+                    elif len(running_exps) == 0:
+                        gpu_ready_for_next[gpu_id] = True
+                else:
+                    # 没有运行中的任务，可以分配新任务
+                    gpu_ready_for_next[gpu_id] = True
 
-                now = time.time()
-                last_time = last_experiment_time.get(exp.gpu, 0)
-                if now - last_time < gpu_startup_delay:
-                    continue
+            # 查找等待中的实验
+            pending_exps = [e for e in self.experiments if e.status == Status.PENDING]
 
-                self.start_experiment(exp)
-                last_experiment_time[exp.gpu] = now
-                started = True
-                self.print_status()
-                break
-
-            if not started:
+            if not pending_exps:
                 # 检查是否所有实验都完成
                 if all(
                     exp.status in [Status.COMPLETED, Status.FAILED, Status.CANCELLED]
@@ -326,15 +352,57 @@ class ExperimentManager:
                 ):
                     self.print_final_results()
                     break
+                time.sleep(2)
+                self.print_status()
+                continue
 
-                # 显示等待状态
+            # 为每个 GPU 尝试分配任务
+            for gpu_id in range(NUM_GPUS):
+                if not gpu_ready_for_next.get(gpu_id, True):
+                    continue
+
+                running_exps = self.get_experiments_on_gpu(gpu_id)
+
+                if running_exps:
+                    # 检查最早开始的任务是否已经输出有效信息
+                    earliest_exp = min(running_exps, key=lambda e: e.start_time or 0)
+                    if self.is_experiment_ready_for_next(earliest_exp):
+                        # 该 GPU 可以开始下一个任务
+                        gpu_ready_for_next[gpu_id] = True
+                    else:
+                        gpu_ready_for_next[gpu_id] = False
+                        continue
+                else:
+                    # 首次分配：检查显存是否足够
+                    mem = self.get_gpu_memory(gpu_id)
+                    if mem >= 30000:
+                        continue
+                    gpu_ready_for_next[gpu_id] = True
+
+                # 分配新任务给这个 GPU
+                for exp in pending_exps:
+                    if exp.status != Status.PENDING:
+                        continue
+                    if exp.gpu != -1 and exp.gpu != gpu_id:
+                        continue
+
+                    if exp.gpu == -1:
+                        exp.gpu = gpu_id
+
+                    self.start_experiment(exp)
+                    gpu_ready_for_next[gpu_id] = False  # 等待这个任务开始
+                    started_any = True
+                    self.print_status()
+                    break
+
+            if not started_any:
                 pending = [e for e in self.experiments if e.status == Status.PENDING]
                 if pending:
                     print(
                         f"{Colors.YELLOW}等待中... ({len(pending)}个实验){Colors.ENDC}"
                     )
-                    time.sleep(5)
-                    self.print_status()
+                time.sleep(2)
+                self.print_status()
 
     def cleanup_all(self):
         """停止所有实验并清理GPU显存"""
