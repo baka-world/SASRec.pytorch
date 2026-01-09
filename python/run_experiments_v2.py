@@ -912,7 +912,7 @@ def main():
     print("开始运行...\n")
 
     # 运行
-    manager.run(max_concurrent=args.max_concurrent)
+    manager.run()
 
 
 if __name__ == "__main__":
