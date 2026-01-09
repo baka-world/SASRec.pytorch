@@ -946,8 +946,8 @@ def compute_validation_loss(model, dataset, args, use_time=False):
                 pos_logits, neg_logits = model(np.array([u]), seq, pos, neg)
 
             # 计算BCE loss
-            indices = np.where(pos != 0)
-            if len(indices[0]) > 0:
+            indices = np.where(pos != 0)[0]
+            if len(indices) > 0:
                 pos_logits_tensor = torch.as_tensor(
                     pos_logits, dtype=torch.float32, device=device
                 )
@@ -956,11 +956,11 @@ def compute_validation_loss(model, dataset, args, use_time=False):
                 )
                 pos_loss = torch.nn.functional.binary_cross_entropy_with_logits(
                     pos_logits_tensor[indices],
-                    torch.ones(len(indices[0]), dtype=torch.float32, device=device),
+                    torch.ones(len(indices), dtype=torch.float32, device=device),
                 )
                 neg_loss = torch.nn.functional.binary_cross_entropy_with_logits(
                     neg_logits_tensor[indices],
-                    torch.zeros(len(indices[0]), dtype=torch.float32, device=device),
+                    torch.zeros(len(indices), dtype=torch.float32, device=device),
                 )
                 total_loss += (pos_loss + neg_loss).item()
                 count += 1
