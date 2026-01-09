@@ -367,7 +367,7 @@ class TiSASRec(torch.nn.Module):
             log_feats: 序列的特征表示，形状为 (batch_size, seq_len, hidden_units)
         """
         # 物品嵌入
-        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
+        seqs = self.item_emb(torch.tensor(log_seqs, dtype=torch.long, device=self.dev))
         seqs *= self.item_emb.embedding_dim**0.5
         seqs = self.item_emb_dropout(seqs)
 
@@ -380,7 +380,7 @@ class TiSASRec(torch.nn.Module):
         abs_pos_V = self.abs_pos_V_emb_dropout(abs_pos_V)
 
         # 时间矩阵嵌入（核心创新）
-        time_matrices = torch.LongTensor(time_matrices).to(self.dev)
+        time_matrices = torch.tensor(time_matrices, dtype=torch.long, device=self.dev)
         time_matrix_K = self.time_matrix_K_emb(time_matrices)
         time_matrix_V = self.time_matrix_V_emb(time_matrices)
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
