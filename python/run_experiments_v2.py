@@ -285,7 +285,7 @@ class ExperimentManager:
             json.dump(results, f, indent=2, ensure_ascii=False)
 
     def is_experiment_ready_for_next(self, exp: Experiment) -> bool:
-        """检查实验是否已经开始输出有效信息（loss/lr/epoch），可以开始下一个任务"""
+        """检查实验是否已经输出有效信息（loss/lr/epoch），可以开始下一个任务"""
         if exp.status != Status.RUNNING:
             return False
 
@@ -296,11 +296,20 @@ class ExperimentManager:
         try:
             with open(log_file, "r") as f:
                 lines = f.readlines()
-                # 检查是否包含 loss、lr 或 epoch 信息
-                content = "".join(lines[-20:]).lower()
+                if not lines:
+                    return False
+
+                content = "".join(lines).lower()
+
                 has_loss = "loss" in content
                 has_lr = "lr" in content
                 has_epoch = "epoch" in content
+                has_early_stop = "early stop" in content
+                has_done = "best" in content and "model" in content
+
+                if has_done or has_early_stop:
+                    return True
+
                 return has_loss or has_lr or has_epoch
         except:
             return False
