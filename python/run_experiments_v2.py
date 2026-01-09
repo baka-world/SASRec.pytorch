@@ -276,9 +276,13 @@ class ExperimentManager:
         with open(self.results_file, "w") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
 
-    def run(self, max_concurrent: int = 4):
-        """运行所有实验"""
-        # 注册信号处理
+    def run(self, max_concurrent: int = 4, gpu_startup_delay: float = 5.0):
+        """运行所有实验
+
+        Args:
+            max_concurrent: 最大并发实验数
+            gpu_startup_delay: 同一GPU上两次实验启动的最小间隔（秒），等待显存稳定
+        """
         import signal
 
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -287,25 +291,29 @@ class ExperimentManager:
         self.clear_screen()
         self.print_header()
 
+        last_experiment_time = {}  # 记录每个GPU上最后一次启动实验的时间
+
         while True:
-            # 启动新实验
             started = False
             for exp in self.experiments:
                 if exp.status != Status.PENDING:
                     continue
 
-                # 自动分配GPU（如果需要）
                 if exp.gpu == -1:
                     exp.gpu = self.auto_assign_gpu(exp)
                     if exp.gpu == -1:
-                        # 所有GPU都满，等待
                         continue
                     print(
                         f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}"
                     )
 
-                # 启动实验
+                now = time.time()
+                last_time = last_experiment_time.get(exp.gpu, 0)
+                if now - last_time < gpu_startup_delay:
+                    continue
+
                 self.start_experiment(exp)
+                last_experiment_time[exp.gpu] = now
                 started = True
                 self.print_status()
                 break
