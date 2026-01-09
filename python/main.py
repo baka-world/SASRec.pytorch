@@ -309,6 +309,11 @@ if __name__ == "__main__":
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
 
+    step_log_file = None
+    if is_main_process():
+        step_log_file = open(os.path.join(output_dir, "step_log.csv"), "w")
+        step_log_file.write("step,epoch,loss,lr,time_elapsed\n")
+
     if is_main_process():
         with open(os.path.join(output_dir, "args.txt"), "w") as f:
             f.write(
@@ -476,6 +481,13 @@ if __name__ == "__main__":
 
             epoch_losses.append(loss.item())
 
+            if is_main_process() and step_log_file is not None:
+                time_elapsed = time.time() - t0
+                step_log_file.write(
+                    f"{total_step},{epoch},{loss.item():.6f},{current_lr:.8f},{time_elapsed:.2f}\n"
+                )
+                step_log_file.flush()
+
         if is_main_process():
             if len(epoch_losses) > 0:
                 avg_loss = sum(epoch_losses) / len(epoch_losses)
@@ -626,6 +638,8 @@ if __name__ == "__main__":
 
     if is_main_process():
         f.close()
+        if step_log_file is not None:
+            step_log_file.close()
     sampler.close()
     cleanup_distributed()
     if is_main_process():
