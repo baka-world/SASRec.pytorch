@@ -481,14 +481,20 @@ if __name__ == "__main__":
             epoch_losses = []
 
         if epoch % 10 == 0 and epoch >= 10:
-            avg_train_loss = sum(epoch_losses) / len(epoch_losses)
-            loss_history.append(avg_train_loss)
-            epoch_losses = []
+            if len(epoch_losses) > 0:
+                avg_train_loss = sum(epoch_losses) / len(epoch_losses)
+                loss_history.append(avg_train_loss)
 
-            if is_main_process():
-                print(
-                    f"[Loss History] Epoch {epoch}: Avg Train Loss = {avg_train_loss:.4f}"
-                )
+                if is_main_process():
+                    print(
+                        f"[Loss History] Epoch {epoch}: Avg Train Loss = {avg_train_loss:.4f}"
+                    )
+            else:
+                if is_main_process():
+                    print(
+                        f"[Warning] Epoch {epoch}: No batches processed, skipping loss history"
+                    )
+            epoch_losses = []
 
             if len(loss_history) >= 3:
                 recent_change = (loss_history[-1] - loss_history[-3]) / loss_history[-3]
