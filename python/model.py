@@ -325,12 +325,16 @@ class TiSASRec(torch.nn.Module):
         self.forward_layernorms = torch.nn.ModuleList()
         self.forward_layers = torch.nn.ModuleList()
 
-        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+        self.last_layernorm = torch.nn.LayerNorm(
+            args.hidden_units, eps=args.layer_norm_eps
+        )
 
         # 构建多个时序感知Transformer编码器块
         for _ in range(args.num_blocks):
             # 自注意力前的LayerNorm
-            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_attn_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.attention_layernorms.append(new_attn_layernorm)
 
             # 时序感知多头注意力层（核心创新）
@@ -340,7 +344,9 @@ class TiSASRec(torch.nn.Module):
             self.attention_layers.append(new_attn_layer)
 
             # 前馈网络前的LayerNorm
-            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_fwd_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.forward_layernorms.append(new_fwd_layernorm)
 
             # 点式前馈网络
@@ -568,12 +574,16 @@ class SASRec(torch.nn.Module):
         self.forward_layers = torch.nn.ModuleList()  # 前馈网络层
 
         # 最终的LayerNorm，对整个序列输出进行归一化
-        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+        self.last_layernorm = torch.nn.LayerNorm(
+            args.hidden_units, eps=args.layer_norm_eps
+        )
 
         # 构建 num_blocks 个Transformer编码器块
         for _ in range(args.num_blocks):
             # 自注意力部分的LayerNorm
-            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_attn_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.attention_layernorms.append(new_attn_layernorm)
 
             # 多头自注意力层
@@ -583,7 +593,9 @@ class SASRec(torch.nn.Module):
             self.attention_layers.append(new_attn_layer)
 
             # 前馈网络部分的LayerNorm
-            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_fwd_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.forward_layernorms.append(new_fwd_layernorm)
 
             # 点式前馈网络

@@ -464,10 +464,14 @@ class TiSASRec(torch.nn.Module):
             self.mhc_attn = torch.nn.ModuleList()
             self.mhc_ffn = torch.nn.ModuleList()
 
-        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+        self.last_layernorm = torch.nn.LayerNorm(
+            args.hidden_units, eps=args.layer_norm_eps
+        )
 
         for _ in range(args.num_blocks):
-            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_attn_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.attention_layernorms.append(new_attn_layernorm)
 
             new_attn_layer = TimeAwareMultiHeadAttention(
@@ -475,7 +479,9 @@ class TiSASRec(torch.nn.Module):
             )
             self.attention_layers.append(new_attn_layer)
 
-            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_fwd_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.forward_layernorms.append(new_fwd_layernorm)
 
             new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)
@@ -644,10 +650,14 @@ class SASRec(torch.nn.Module):
             self.mhc_attn = torch.nn.ModuleList()
             self.mhc_ffn = torch.nn.ModuleList()
 
-        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+        self.last_layernorm = torch.nn.LayerNorm(
+            args.hidden_units, eps=args.layer_norm_eps
+        )
 
         for _ in range(args.num_blocks):
-            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_attn_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.attention_layernorms.append(new_attn_layernorm)
 
             new_attn_layer = NumericallyStableMultiheadAttention(
@@ -655,7 +665,9 @@ class SASRec(torch.nn.Module):
             )
             self.attention_layers.append(new_attn_layer)
 
-            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-6)
+            new_fwd_layernorm = torch.nn.LayerNorm(
+                args.hidden_units, eps=args.layer_norm_eps
+            )
             self.forward_layernorms.append(new_fwd_layernorm)
 
             new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)

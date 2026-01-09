@@ -204,6 +204,12 @@ parser.add_argument(
     type=float,
     help="AdamW的权重衰减系数（仅在使用AdamW时生效）",
 )
+parser.add_argument(
+    "--layer_norm_eps",
+    default=1e-6,
+    type=float,
+    help="LayerNorm的eps值，用于数值稳定性",
+)
 
 parser.add_argument("--time_span", default=100, type=int, help="时间间分离散化范围")
 parser.add_argument(
