@@ -314,6 +314,63 @@ class ExperimentManager:
         # 清空运行列表
         self.running.clear()
         
+        # 查找并终止所有Python进程（包括残留）
+        print(f"{Colors.CYAN}清理残留进程...{Colors.ENDC}")
+        try:
+            result = subprocess.run(
+                ["ps", "aux"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            killed = False
+            for line in result.stdout.split("\n"):
+                if 'python' in line and 'grep' not in line:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            pid = int(parts[1])
+                            if pid > 0 and '/usr/lib/xorg/Xorg' not in line:
+                                subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+                                print(f"  已终止 PID: {pid}")
+                                killed = True
+                        except:
+                            pass
+            if not killed:
+                print("  无需清理")
+        except Exception as e:
+            print(f"  清理失败: {e}")
+        
+        # 等待进程终止
+        time.sleep(2)
+        
+        # 显示GPU状态
+        print(f"{Colors.CYAN}GPU 状态:{Colors.ENDC}")
+        try:
+            result = subprocess.run(
+                ["nvidia-smi"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            for line in result.stdout.split("\n"):
+                if 'Tesla' in line or 'MiB' in line:
+                    print(f"  {line}")
+        except:
+            pass
+        
+        print(f"{Colors.GREEN}已停止所有实验并清理显存{Colors.ENDC}")
+        
+        # 停止所有运行的实验
+        for gpu_id, exp in list(self.running.items()):
+            if exp:
+                print(f"  停止实验: {exp.name} (GPU {gpu_id})")
+                exp.status = Status.CANCELLED
+                exp.end_time = time.time()
+        
+        # 清空运行列表
+        self.running.clear()
+        
         # 尝试释放GPU显存
         try:
             result = subprocess.run(
