@@ -478,72 +478,69 @@ if __name__ == "__main__":
             if len(epoch_losses) > 0:
                 avg_loss = sum(epoch_losses) / len(epoch_losses)
                 print(f"Epoch {epoch}: Loss={avg_loss:.4f} LR={current_lr:.6f}")
-            epoch_losses = []
 
-        if epoch % 10 == 0 and epoch >= 10:
-            if len(epoch_losses) > 0:
-                avg_train_loss = sum(epoch_losses) / len(epoch_losses)
-                loss_history.append(avg_train_loss)
+            if epoch % 10 == 0 and epoch >= 10:
+                if len(epoch_losses) > 0:
+                    avg_train_loss = sum(epoch_losses) / len(epoch_losses)
+                    loss_history.append(avg_train_loss)
 
-                if is_main_process():
-                    print(
-                        f"[Loss History] Epoch {epoch}: Avg Train Loss = {avg_train_loss:.4f}"
-                    )
-            else:
-                if is_main_process():
-                    print(
-                        f"[Warning] Epoch {epoch}: No batches processed, skipping loss history"
-                    )
-            epoch_losses = []
-
-            if len(loss_history) >= 3:
-                recent_change = (loss_history[-1] - loss_history[-3]) / loss_history[-3]
-
-                if is_main_process():
-                    print(
-                        f"[Early Stop Check] Recent loss change: {recent_change * 100:.4f}%"
-                    )
-
-                if abs(recent_change) < args.early_stop_threshold:
-                    early_stop_counter += 1
                     if is_main_process():
                         print(
-                            f"[Early Stop] Patience counter: {early_stop_counter}/{args.early_stop_patience}"
+                            f"[Loss History] Epoch {epoch}: Avg Train Loss = {avg_train_loss:.4f}"
                         )
-                else:
-                    early_stop_counter = 0
 
-                if early_stop_counter >= args.early_stop_patience:
-                    if is_main_process():
-                        print(f"=" * 60)
-                        print(
-                            f"[Early Stop] 触发早停！连续{early_stop_counter}次loss改善不足{args.early_stop_threshold * 100}%"
-                        )
-                        print(
-                            f"最佳验证指标: NDCG@10={best_val_ndcg:.4f}, HR@10={best_val_hr:.4f}"
-                        )
-                        print(
-                            f"最佳测试指标: NDCG@10={best_test_ndcg:.4f}, HR@10={best_test_hr:.4f}"
-                        )
-                        print(f"=" * 60)
+                    if len(loss_history) >= 3:
+                        recent_change = (
+                            loss_history[-1] - loss_history[-3]
+                        ) / loss_history[-3]
 
-                    folder = output_dir
-                    fname = "model.early_stop.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth"
-                    fname = fname.format(
-                        epoch,
-                        args.lr,
-                        args.num_blocks,
-                        args.num_heads,
-                        args.hidden_units,
-                        args.maxlen,
-                    )
-                    torch.save(model.state_dict(), os.path.join(folder, fname))
+                        if is_main_process():
+                            print(
+                                f"[Early Stop Check] Recent loss change: {recent_change * 100:.4f}%"
+                            )
 
-                    sampler.close()
-                    cleanup_distributed()
-                    if is_main_process():
-                        print("Done (Early Stop)")
-                    exit(0)
+                        if abs(recent_change) < args.early_stop_threshold:
+                            early_stop_counter += 1
+                            if is_main_process():
+                                print(
+                                    f"[Early Stop] Patience counter: {early_stop_counter}/{args.early_stop_patience}"
+                                )
+                        else:
+                            early_stop_counter = 0
+
+                        if early_stop_counter >= args.early_stop_patience:
+                            if is_main_process():
+                                print(f"=" * 60)
+                                print(
+                                    f"[Early Stop] 触发早停！连续{early_stop_counter}次loss改善不足{args.early_stop_threshold * 100}%"
+                                )
+                                print(
+                                    f"最佳验证指标: NDCG@10={best_val_ndcg:.4f}, HR@10={best_val_hr:.4f}"
+                                )
+                                print(
+                                    f"最佳测试指标: NDCG@10={best_test_ndcg:.4f}, HR@10={best_test_hr:.4f}"
+                                )
+                                print(f"=" * 60)
+
+                            folder = output_dir
+                            fname = "model.early_stop.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth"
+                            fname = fname.format(
+                                epoch,
+                                args.lr,
+                                args.num_blocks,
+                                args.num_heads,
+                                args.hidden_units,
+                                args.maxlen,
+                            )
+                            torch.save(model.state_dict(), os.path.join(folder, fname))
+
+                            sampler.close()
+                            cleanup_distributed()
+                            if is_main_process():
+                                print("Done (Early Stop)")
+                            exit(0)
+
+        epoch_losses = []
 
         if epoch % 20 == 0:
             model.eval()
