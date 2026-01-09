@@ -127,6 +127,22 @@ class ExperimentManager:
             pass
         return None
 
+    def auto_assign_gpu(self, exp: Experiment) -> int:
+        """自动分配GPU（选择最空闲的GPU）
+
+        Returns:
+            分配的GPU编号
+        """
+        available_gpus = []
+        for gpu_id in range(4):
+            if gpu_id not in self.running:
+                mem = self.get_gpu_memory(gpu_id)
+                available_gpus.append((gpu_id, mem))
+
+        # 按显存从小到大排序，选择最空闲的
+        available_gpus.sort(key=lambda x: x[1] if x[1] else float("inf"))
+        return available_gpus[0][0] if available_gpus else 0
+
     def get_available_gpu(self, min_memory: float = 4.0) -> Optional[int]:
         """获取可用GPU"""
         for gpu_id in range(4):
@@ -142,7 +158,17 @@ class ExperimentManager:
         return gpu_id not in self.running
 
     def start_experiment(self, exp: Experiment):
-        """启动实验"""
+        """启动实验
+
+        如果exp.gpu == -1，则自动分配最空闲的GPU
+        """
+        # 自动分配GPU
+        if exp.gpu == -1:
+            exp.gpu = self.auto_assign_gpu(exp)
+            print(
+                f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}"
+            )
+
         exp.status = Status.RUNNING
         exp.start_time = time.time()
 
@@ -415,7 +441,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "exp_e1_sasrec",
-            0,
+            -1,
             "--dataset=ml-1m --train_dir=exp_e1_sasrec --no_time --no_mhc "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 300",
         )
@@ -424,7 +450,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "exp_e2_sasrec_mhc",
-            0,
+            -1,
             "--dataset=ml-1m --train_dir=exp_e2_sasrec_mhc --no_time "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 300",
         )
@@ -433,7 +459,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "exp_e3_tisasrec",
-            0,
+            -1,
             "--dataset=ml-1m --train_dir=exp_e3_tisasrec --no_mhc "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 300",
         )
@@ -442,7 +468,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "exp_e4_tisasrec_mhc",
-            0,
+            -1,
             "--dataset=ml-1m --train_dir=exp_e4_tisasrec_mhc "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 300",
         )
@@ -453,7 +479,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t1_batch512",
-            1,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t1_batch512 --batch_size 512 "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 300",
         )
@@ -462,7 +488,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t2_h150_n4",
-            1,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t2_h150_n4 --hidden_units 150 "
             "--maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 300",
         )
@@ -471,7 +497,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t3_h150_batch512",
-            1,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t3_h150_batch512 --hidden_units 150 --batch_size 512 "
             "--maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 300",
         )
@@ -480,7 +506,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t4_n8",
-            1,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t4_n8 --mhc_expansion_rate 8 "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --num_epochs 300",
         )
@@ -490,7 +516,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t5_n12",
-            2,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t5_n12 --mhc_expansion_rate 12 "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --num_epochs 300",
         )
@@ -499,7 +525,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t6_maxlen100",
-            2,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t6_maxlen100 --maxlen 100 "
             "--hidden_units 100 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 300",
         )
@@ -508,7 +534,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t7_max100_n8",
-            2,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t7_max100_n8 --maxlen 100 --mhc_expansion_rate 8 "
             "--hidden_units 100 --lr 0.01 --num_epochs 300",
         )
@@ -517,7 +543,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t8_h150_n8_max100",
-            2,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t8_h150_n8_max100 --hidden_units 150 --maxlen 100 --mhc_expansion_rate 8 "
             "--lr 0.01 --num_epochs 300",
         )
@@ -527,7 +553,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t9_h200_n8",
-            3,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t9_h200_n8 --hidden_units 200 --mhc_expansion_rate 8 "
             "--maxlen 50 --lr 0.01 --num_epochs 300",
         )
@@ -536,7 +562,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t10_batch1024",
-            3,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t10_batch1024 --batch_size 1024 "
             "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 300",
         )
@@ -545,7 +571,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t11_h200_n12",
-            3,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t11_h200_n12 --hidden_units 200 --mhc_expansion_rate 12 "
             "--maxlen 50 --lr 0.01 --num_epochs 300",
         )
@@ -554,7 +580,7 @@ def get_experiments() -> List[tuple]:
     experiments.append(
         (
             "tune_t12_best_guess",
-            3,
+            -1,
             "--dataset=ml-1m --train_dir=tune_t12_best_guess --hidden_units 150 --maxlen 100 --mhc_expansion_rate 8 "
             "--lr 0.01 --batch_size 256 --num_epochs 300",
         )
