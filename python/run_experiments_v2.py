@@ -407,12 +407,11 @@ class ExperimentManager:
                         continue
                     gpu_ready_for_next[gpu_id] = True
 
-                # 如果 GPU 上已有 1 个或更多任务，不再分配新任务（等待任务完成或输出 loss）
-                running_count = len(self.get_experiments_on_gpu(gpu_id))
-                if running_count >= 1:
+                if not gpu_ready_for_next.get(gpu_id, True):
                     continue
 
-                if not gpu_ready_for_next.get(gpu_id, True):
+                # 如果 GPU 上已有任务在运行且还没准备好，不分配新任务
+                if len(running_exps) >= 1 and not gpu_ready_for_next.get(gpu_id, False):
                     continue
 
                 # 分配新任务给这个 GPU
