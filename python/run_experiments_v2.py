@@ -22,7 +22,26 @@ from enum import Enum
 import shutil
 
 
-# 颜色定义
+# 动态检测 GPU 数量
+def get_gpu_count() -> int:
+    """检测可用 GPU 数量"""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        lines = [l for l in result.stdout.strip().split("\n") if l]
+        return max(len(lines), 1)
+    except:
+        return 1
+
+
+NUM_GPUS = get_gpu_count()
+print(f"检测到 {NUM_GPUS} 个 GPU")
+
+
 class Colors:
     HEADER = "\033[95m"
     BLUE = "\033[94m"
@@ -135,23 +154,23 @@ class ExperimentManager:
         """
         # 尝试所有GPU，找到显存足够的
         candidates = []
-        for gpu_id in range(4):
+        for gpu_id in range(NUM_GPUS):
             mem = self.get_gpu_memory(gpu_id)
             candidates.append((gpu_id, mem))
-        
+
         # 按显存从小到大排序
-        candidates.sort(key=lambda x: x[1] if x[1] else float('inf'))
-        
+        candidates.sort(key=lambda x: x[1] if x[1] else float("inf"))
+
         # 返回显存最少的GPU（允许运行新实验）
         for gpu_id, mem in candidates:
             if mem < 30000:  # 显存 < 30GB
                 return gpu_id
-        
+
         return -1  # 所有GPU都满
 
     def get_available_gpu(self, min_memory: float = 4.0) -> Optional[int]:
         """获取可用GPU"""
-        for gpu_id in range(4):
+        for gpu_id in range(NUM_GPUS):
             if gpu_id in self.running:
                 continue
             mem = self.get_gpu_memory(gpu_id)
@@ -261,9 +280,10 @@ class ExperimentManager:
         """运行所有实验"""
         # 注册信号处理
         import signal
+
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
-        
+
         self.clear_screen()
         self.print_header()
 
@@ -280,7 +300,9 @@ class ExperimentManager:
                     if exp.gpu == -1:
                         # 所有GPU都满，等待
                         continue
-                    print(f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}")
+                    print(
+                        f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}"
+                    )
 
                 # 启动实验
                 self.start_experiment(exp)
@@ -309,7 +331,7 @@ class ExperimentManager:
     def cleanup_all(self):
         """停止所有实验并清理GPU显存"""
         print(f"{Colors.YELLOW}正在停止所有实验...{Colors.ENDC}")
-        
+
         # 停止所有运行的实验
         for gpu_id, exps in list(self.running.items()):
             for exp in exps:
@@ -317,73 +339,68 @@ class ExperimentManager:
                     print(f"  停止实验: {exp.name} (GPU {gpu_id})")
                     exp.status = Status.CANCELLED
                     exp.end_time = time.time()
-        
+
         # 清空运行列表
         self.running.clear()
-        
+
         # 查找并终止所有Python进程（包括残留）- 多次尝试确保清理干净
         print(f"{Colors.CYAN}清理残留进程...{Colors.ENDC}")
-        
+
         for attempt in range(3):  # 最多尝试3次
             killed_any = False
             try:
                 result = subprocess.run(
-                    ["ps", "aux"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
+                    ["ps", "aux"], capture_output=True, text=True, timeout=10
                 )
                 for line in result.stdout.split("\n"):
-                    if 'python' in line and 'grep' not in line:
+                    if "python" in line and "grep" not in line:
                         parts = line.split()
                         if len(parts) >= 2:
                             try:
                                 pid = int(parts[1])
-                                if pid > 0 and '/usr/lib/xorg/Xorg' not in line:
-                                    subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+                                if pid > 0 and "/usr/lib/xorg/Xorg" not in line:
+                                    subprocess.run(
+                                        ["kill", "-9", str(pid)], capture_output=True
+                                    )
                                     print(f"  已终止 PID: {pid}")
                                     killed_any = True
                             except:
                                 pass
             except Exception as e:
-                print(f"  清理尝试 {attempt+1} 失败: {e}")
-            
+                print(f"  清理尝试 {attempt + 1} 失败: {e}")
+
             if killed_any:
                 time.sleep(1)  # 等待进程终止
             else:
                 break  # 没有找到进程，退出
-        
+
         # 再次强制检查nvidia-smi中的进程
         try:
             result = subprocess.run(
-                ["nvidia-smi"],
-                capture_output=True,
-                text=True,
-                timeout=10
+                ["nvidia-smi"], capture_output=True, text=True, timeout=10
             )
             for line in result.stdout.split("\n"):
-                if 'python' in line:
-                    print(f"  [bold red]警告: 仍有Python进程: {line.strip()}[/bold red]")
+                if "python" in line:
+                    print(
+                        f"  [bold red]警告: 仍有Python进程: {line.strip()}[/bold red]"
+                    )
         except:
             pass
-        
+
         # 显示GPU状态
         print(f"{Colors.CYAN}GPU 状态:{Colors.ENDC}")
         try:
             result = subprocess.run(
-                ["nvidia-smi"],
-                capture_output=True,
-                text=True,
-                timeout=10
+                ["nvidia-smi"], capture_output=True, text=True, timeout=10
             )
             for line in result.stdout.split("\n"):
-                if 'Tesla' in line or 'MiB' in line:
+                if "Tesla" in line or "MiB" in line:
                     print(f"  {line}")
         except:
             pass
-        
+
         print(f"{Colors.GREEN}已停止所有实验{Colors.ENDC}")
-        
+
         # 停止所有运行的实验
         for gpu_id, exps in list(self.running.items()):
             for exp in exps:
@@ -391,27 +408,24 @@ class ExperimentManager:
                     print(f"  停止实验: {exp.name} (GPU {gpu_id})")
                     exp.status = Status.CANCELLED
                     exp.end_time = time.time()
-        
+
         # 清空运行列表
         self.running.clear()
-        
+
         # 尝试释放GPU显存
         try:
             result = subprocess.run(
-                ["nvidia-smi"],
-                capture_output=True,
-                text=True,
-                timeout=10
+                ["nvidia-smi"], capture_output=True, text=True, timeout=10
             )
             print(f"{Colors.CYAN}GPU 状态:{Colors.ENDC}")
-            for line in result.stdout.split('\n'):
-                if 'Tesla' in line or 'MiB' in line:
+            for line in result.stdout.split("\n"):
+                if "Tesla" in line or "MiB" in line:
                     print(f"  {line}")
         except:
             pass
-        
+
         print(f"{Colors.GREEN}已停止所有实验{Colors.ENDC}")
-    
+
     def signal_handler(self, signum, frame):
         """信号处理：Ctrl+C 优雅退出"""
         print(f"{Colors.RED}收到终止信号，正在清理...{Colors.ENDC}")
@@ -419,7 +433,7 @@ class ExperimentManager:
         self.save_results()
         print(f"{Colors.YELLOW}实验结果已保存到: {self.results_file}{Colors.ENDC}")
         sys.exit(0)
-    
+
     def clear_screen(self):
         os.system("cls" if os.name == "nt" else "clear")
 
@@ -439,11 +453,18 @@ class ExperimentManager:
         if not exp.log_file or not os.path.exists(exp.log_file):
             return ""
         try:
-            with open(exp.log_file, 'r') as f:
+            with open(exp.log_file, "r") as f:
                 lines = f.readlines()
                 for line in reversed(lines[-10:]):
                     line = line.strip()
-                    if line and not line.startswith('实验:') and not line.startswith('GPU:') and not line.startswith('命令:') and not line.startswith('开始时间:') and not line.startswith('='):
+                    if (
+                        line
+                        and not line.startswith("实验:")
+                        and not line.startswith("GPU:")
+                        and not line.startswith("命令:")
+                        and not line.startswith("开始时间:")
+                        and not line.startswith("=")
+                    ):
                         return line[:60] + ("..." if len(line) > 60 else "")
                 return ""
         except:
@@ -459,13 +480,27 @@ class ExperimentManager:
         self.clear_screen()
 
         # 标题
-        rprint(f"[bold magenta]╔══════════════════════════════════════════════════════════════╗[/]")
-        rprint(f"[bold magenta]║[/]  [bold white]SASRec/TiSASRec 实验管理器[/]                           [bold magenta]║[/]")
-        rprint(f"[bold magenta]║[/]  [dim]Experiment Manager for SASRec/TiSASRec[/]                  [bold magenta]║[/]")
-        rprint(f"[bold magenta]╠══════════════════════════════════════════════════════════════╣[/]")
-        rprint(f"[bold magenta]║[/]  实验数量: [cyan]{len(self.experiments)}[/]                                              [bold magenta]║[/]")
-        rprint(f"[bold magenta]║[/]  开始时间: [cyan]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]                         [bold magenta]║[/]")
-        rprint(f"[bold magenta]╚══════════════════════════════════════════════════════════════╝[/]")
+        rprint(
+            f"[bold magenta]╔══════════════════════════════════════════════════════════════╗[/]"
+        )
+        rprint(
+            f"[bold magenta]║[/]  [bold white]SASRec/TiSASRec 实验管理器[/]                           [bold magenta]║[/]"
+        )
+        rprint(
+            f"[bold magenta]║[/]  [dim]Experiment Manager for SASRec/TiSASRec[/]                  [bold magenta]║[/]"
+        )
+        rprint(
+            f"[bold magenta]╠══════════════════════════════════════════════════════════════╣[/]"
+        )
+        rprint(
+            f"[bold magenta]║[/]  实验数量: [cyan]{len(self.experiments)}[/]                                              [bold magenta]║[/]"
+        )
+        rprint(
+            f"[bold magenta]║[/]  开始时间: [cyan]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]                         [bold magenta]║[/]"
+        )
+        rprint(
+            f"[bold magenta]╚══════════════════════════════════════════════════════════════╝[/]"
+        )
 
         # 实验状态表格
         table = Table(box=ROUNDED, show_header=True, header_style="bold cyan")
@@ -475,18 +510,22 @@ class ExperimentManager:
         table.add_column("显存", width=12, justify="right")
         table.add_column("运行时", width=10, justify="right")
 
-        for gpu_id in range(4):
+        for gpu_id in range(NUM_GPUS):
             exps = self.running.get(gpu_id, [])
             mem = self.get_gpu_memory(gpu_id)
-            mem_str = f"{mem/1024:.1f}GB"
-            
+            mem_str = f"{mem / 1024:.1f}GB"
+
             if exps:
                 for i, exp in enumerate(exps):
                     name = exp.name[:30] + "..." if len(exp.name) > 30 else exp.name
                     latest = self.get_latest_output(exp) or "-"
                     latest = latest[:30] + ("..." if len(latest) > 30 else "")
-                    duration = f"{time.time() - exp.start_time:.0f}s" if exp.start_time else "-"
-                    
+                    duration = (
+                        f"{time.time() - exp.start_time:.0f}s"
+                        if exp.start_time
+                        else "-"
+                    )
+
                     gpu_prefix = str(gpu_id) if i == 0 else " "
                     table.add_row(gpu_prefix, name, latest, mem_str, duration)
             else:
@@ -499,14 +538,17 @@ class ExperimentManager:
         # GPU显存摘要
         rprint("")
         rprint("[bold cyan]显存使用:[/]", end="")
-        for gpu_id in range(4):
+        for gpu_id in range(NUM_GPUS):
             mem = self.get_gpu_memory(gpu_id)
             exps = self.running.get(gpu_id, [])
             count = len(exps)
             if count > 0:
-                rprint(f"  [green]GPU{gpu_id}:[/] {mem/1024:.1f}GB ([yellow]{count}实验[/])", end="")
+                rprint(
+                    f"  [green]GPU{gpu_id}:[/] {mem / 1024:.1f}GB ([yellow]{count}实验[/])",
+                    end="",
+                )
             else:
-                rprint(f"  GPU{gpu_id}: {mem/1024:.1f}GB", end="")
+                rprint(f"  GPU{gpu_id}: {mem / 1024:.1f}GB", end="")
         rprint("")
 
         # 进度统计
@@ -514,14 +556,14 @@ class ExperimentManager:
         failed = [e for e in self.experiments if e.status == Status.FAILED]
         pending = [e for e in self.experiments if e.status == Status.PENDING]
         total = len(self.experiments)
-        
+
         rprint("")
         rprint(f"[bold]进度:[/] [green]{completed}[/]/{total}完成", end="")
         if failed:
             rprint(f"  [red]X {len(failed)}失败[/]", end="")
         if pending:
             rprint(f"  [yellow]O {len(pending)}等待[/]", end="")
-        
+
         if completed:
             best = max((e.ndcg10 for e in completed if e.ndcg10), default=0)
             if best > 0:
@@ -532,7 +574,11 @@ class ExperimentManager:
         if pending:
             names = [e.name for e in pending[:12]]
             rprint(f"")
-            rprint(f"[bold yellow]等待 ({len(pending)}个):[/] " + ", ".join(names) + ("..." if len(pending) > 12 else ""))
+            rprint(
+                f"[bold yellow]等待 ({len(pending)}个):[/] "
+                + ", ".join(names)
+                + ("..." if len(pending) > 12 else "")
+            )
 
     def print_final_results(self):
         """打印最终结果"""

@@ -628,7 +628,10 @@ class SASRec(torch.nn.Module):
         # 创建位置索引 [1, 2, 3, ..., seq_len]
         poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
         # 将padding位置的位置嵌入设为0
-        poss = poss * (log_seqs.cpu().numpy() != 0)
+        log_seqs_np = (
+            log_seqs.cpu().numpy() if hasattr(log_seqs, "cpu") else np.asarray(log_seqs)
+        )
+        poss = poss * (log_seqs_np != 0)
         # 添加位置嵌入
         seqs += self.pos_emb(torch.as_tensor(poss, dtype=torch.long, device=self.dev))
         seqs = self.emb_dropout(seqs)
