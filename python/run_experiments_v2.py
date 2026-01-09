@@ -300,9 +300,9 @@ class ExperimentManager:
                 pending = [e for e in self.experiments if e.status == Status.PENDING]
                 if pending:
                     print(
-                        f"\n{Colors.YELLOW}等待GPU可用... ({len(pending)}个实验等待中){Colors.ENDC}"
+                        f"\n{Colors.YELLOW}等待中... ({len(pending)}个实验){Colors.ENDC}"
                     )
-                    time.sleep(10)
+                    time.sleep(5)
                     self.print_status()
 
     def cleanup_all(self):
