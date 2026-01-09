@@ -387,7 +387,7 @@ class TiSASRec(torch.nn.Module):
         time_matrix_V = self.time_matrix_V_dropout(time_matrix_V)
 
         # 掩码：标记padding位置（物品ID为0）
-        timeline_mask = torch.BoolTensor(log_seqs == 0).to(self.dev)
+        timeline_mask = (log_seqs == 0).to(self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1)
 
         # 因果注意力掩码：防止信息泄露
