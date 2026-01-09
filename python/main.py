@@ -474,12 +474,11 @@ if __name__ == "__main__":
 
             epoch_losses.append(loss.item())
 
-            if is_main_process():
-                print(
-                    "loss in epoch {} iteration {}: {:.4f} lr: {:.6f}".format(
-                        epoch, step, loss.item(), current_lr
-                    )
-                )
+        if is_main_process():
+            if len(epoch_losses) > 0:
+                avg_loss = sum(epoch_losses) / len(epoch_losses)
+                print(f"Epoch {epoch}: Loss={avg_loss:.4f} LR={current_lr:.6f}")
+            epoch_losses = []
 
         if epoch % 10 == 0 and epoch >= 10:
             avg_train_loss = sum(epoch_losses) / len(epoch_losses)
