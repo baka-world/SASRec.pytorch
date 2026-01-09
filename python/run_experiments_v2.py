@@ -159,8 +159,9 @@ class ExperimentManager:
         return None
 
     def is_gpu_free(self, gpu_id: int) -> bool:
-        """检查GPU是否空闲"""
-        return gpu_id not in self.running
+        """检查GPU显存是否足够"""
+        mem = self.get_gpu_memory(gpu_id)
+        return mem < 30000  # 30GB
 
     def start_experiment(self, exp: Experiment):
         """启动实验
@@ -215,12 +216,17 @@ class ExperimentManager:
             self.save_results()
 
             # 从运行列表移除
-            if exp.gpu in self.running:
-                del self.running[exp.gpu]
+            if exp.gpu in self.running and exp in self.running[exp.gpu]:
+                self.running[exp.gpu].remove(exp)
+                if not self.running[exp.gpu]:
+                    del self.running[exp.gpu]
 
         thread = threading.Thread(target=monitor_output, daemon=True)
         thread.start()
-        self.running[exp.gpu] = exp
+        # 允许多个实验在同一GPU，使用列表存储
+        if exp.gpu not in self.running:
+            self.running[exp.gpu] = []
+        self.running[exp.gpu].append(exp)
 
     def parse_results(self, exp: Experiment):
         """解析实验结果"""
@@ -272,8 +278,10 @@ class ExperimentManager:
                     exp.gpu = self.auto_assign_gpu(exp)
                     print(f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}")
 
-                # 检查GPU是否空闲
-                if exp.gpu in self.running:
+                # 检查GPU显存是否足够（允许同一GPU运行多个实验）
+                current_mem = self.get_gpu_memory(exp.gpu)
+                # 估算新实验需要约 2000MiB
+                if current_mem > 30000:  # 显存接近满时等待
                     continue
 
                 # 启动实验
@@ -305,11 +313,12 @@ class ExperimentManager:
         print(f"{Colors.YELLOW}正在停止所有实验...{Colors.ENDC}")
         
         # 停止所有运行的实验
-        for gpu_id, exp in list(self.running.items()):
-            if exp:
-                print(f"  停止实验: {exp.name} (GPU {gpu_id})")
-                exp.status = Status.CANCELLED
-                exp.end_time = time.time()
+        for gpu_id, exps in list(self.running.items()):
+            for exp in exps:
+                if exp:
+                    print(f"  停止实验: {exp.name} (GPU {gpu_id})")
+                    exp.status = Status.CANCELLED
+                    exp.end_time = time.time()
         
         # 清空运行列表
         self.running.clear()
@@ -362,11 +371,12 @@ class ExperimentManager:
         print(f"{Colors.GREEN}已停止所有实验并清理显存{Colors.ENDC}")
         
         # 停止所有运行的实验
-        for gpu_id, exp in list(self.running.items()):
-            if exp:
-                print(f"  停止实验: {exp.name} (GPU {gpu_id})")
-                exp.status = Status.CANCELLED
-                exp.end_time = time.time()
+        for gpu_id, exps in list(self.running.items()):
+            for exp in exps:
+                if exp:
+                    print(f"  停止实验: {exp.name} (GPU {gpu_id})")
+                    exp.status = Status.CANCELLED
+                    exp.end_time = time.time()
         
         # 清空运行列表
         self.running.clear()
