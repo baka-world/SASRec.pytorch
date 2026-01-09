@@ -78,6 +78,7 @@ class Experiment:
     ndcg10: Optional[float] = None
     hr10: Optional[float] = None
     output_dir: str = ""
+    pid: Optional[int] = None  # 进程 PID
     error: Optional[str] = None
 
     def to_dict(self) -> dict:
@@ -223,6 +224,9 @@ class ExperimentManager:
             start_new_session=True,  # 创建新进程组
         )
 
+        exp.pid = process.pid  # 记录 PID
+        print(f"{Colors.CYAN}启动实验: {exp.name} (PID: {exp.pid}){Colors.ENDC}")
+
         # 后台线程监控输出
         def monitor_output():
             for line in process.stdout:
@@ -317,8 +321,32 @@ class ExperimentManager:
             return False
 
     def get_experiments_on_gpu(self, gpu_id: int) -> List[Experiment]:
-        """获取指定 GPU 上所有运行中的实验"""
-        return [e for e in self.running.get(gpu_id, []) if e.status == Status.RUNNING]
+        """获取指定 GPU 上所有运行中的实验（通过 PID 检查进程状态）"""
+        result = []
+        for exp in self.running.get(gpu_id, []):
+            if exp.status != Status.RUNNING:
+                continue
+            # 通过 PID 检查进程是否真的在运行
+            if exp.pid is not None:
+                try:
+                    os.kill(exp.pid, 0)  # 信号 0 只检查进程是否存在
+                except ProcessLookupError:
+                    # 进程不存在，标记为失败
+                    exp.status = Status.FAILED
+                    exp.error = "进程意外终止"
+                    continue
+            result.append(exp)
+        return result
+
+    def is_process_alive(self, exp: Experiment) -> bool:
+        """检查实验进程是否还在运行"""
+        if exp.pid is None:
+            return False
+        try:
+            os.kill(exp.pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
 
     def run(self):
         """运行所有实验
