@@ -127,26 +127,26 @@ class ExperimentManager:
             return 0
 
     def auto_assign_gpu(self, exp: Experiment) -> int:
-        """自动分配GPU（选择运行实验最少的GPU）
+        """自动分配GPU（尝试所有GPU，找到显存足够的）
 
         Returns:
-            分配的GPU编号
+            分配的GPU编号，如果都不可用返回-1
         """
-        # 统计每个GPU上正在运行的实验数量
-        gpu_counts = {0: 0, 1: 0, 2: 0, 3: 0}
-        for gpu_id in self.running:
-            if gpu_id in gpu_counts:
-                gpu_counts[gpu_id] += 1
-
-        # 选择实验数量最少的GPU
-        min_count = min(gpu_counts.values())
-        available = [gid for gid, count in gpu_counts.items() if count == min_count]
-
-        # 如果有多个可选，选择显存最少的
-        if len(available) > 1:
-            available.sort(key=lambda gid: self.get_gpu_memory(gid))
+        # 尝试所有GPU，找到显存足够的
+        candidates = []
+        for gpu_id in range(4):
+            mem = self.get_gpu_memory(gpu_id)
+            candidates.append((gpu_id, mem))
         
-        return available[0]
+        # 按显存从小到大排序
+        candidates.sort(key=lambda x: x[1] if x[1] else float('inf'))
+        
+        # 返回显存最少的GPU（允许运行新实验）
+        for gpu_id, mem in candidates:
+            if mem < 30000:  # 显存 < 30GB
+                return gpu_id
+        
+        return -1  # 所有GPU都满
 
     def get_available_gpu(self, min_memory: float = 4.0) -> Optional[int]:
         """获取可用GPU"""
@@ -276,13 +276,10 @@ class ExperimentManager:
                 # 自动分配GPU（如果需要）
                 if exp.gpu == -1:
                     exp.gpu = self.auto_assign_gpu(exp)
+                    if exp.gpu == -1:
+                        # 所有GPU都满，等待
+                        continue
                     print(f"{Colors.CYAN}自动分配GPU: {exp.name} -> cuda:{exp.gpu}{Colors.ENDC}")
-
-                # 检查GPU显存是否足够（允许同一GPU运行多个实验）
-                current_mem = self.get_gpu_memory(exp.gpu)
-                # 估算新实验需要约 2000MiB
-                if current_mem > 30000:  # 显存接近满时等待
-                    continue
 
                 # 启动实验
                 self.start_experiment(exp)
