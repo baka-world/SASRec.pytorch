@@ -426,7 +426,6 @@ if __name__ == "__main__":
 
     # 早停跟踪变量
     loss_history = []  # 训练loss历史（每10个epoch记录一次平均loss）
-    val_loss_history = []  # 验证loss历史（每20个epoch记录）
     early_stop_counter = 0  # 早停计数器
     epoch_losses = []  # 当前epoch的所有batch loss
 
@@ -595,23 +594,6 @@ if __name__ == "__main__":
                     " epoch:%d, time: %f(s), valid (NDCG@10: %.4f, HR@10: %.4f), test (NDCG@10: %.4f, HR@10: %.4f)"
                     % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1])
                 )
-
-            # 计算验证集loss（用于早停判断）
-            try:
-                if args.use_time or not args.no_time:
-                    val_loss = compute_validation_loss(
-                        model, dataset, args, use_time=True
-                    )
-                else:
-                    val_loss = compute_validation_loss(
-                        model, dataset, args, use_time=False
-                    )
-                val_loss_history.append(val_loss)
-                if is_main_process():
-                    print(f"[Val Loss] Epoch {epoch}: Val Loss = {val_loss:.4f}")
-            except Exception as e:
-                if is_main_process():
-                    print(f"[Val Loss] Failed to compute val loss: {e}")
 
             if (
                 t_valid[0] > best_val_ndcg
