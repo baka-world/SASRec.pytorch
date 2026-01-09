@@ -325,7 +325,7 @@ if __name__ == "__main__":
     dataset = data_partition(args.dataset)
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
 
-    num_batch = (len(user_train) - 1) // args.batch_size + 1
+    num_batch = max(1, (len(user_train) - 1) // args.batch_size + 1)
 
     cc = 0.0
     for u in user_train:
@@ -417,6 +417,8 @@ if __name__ == "__main__":
 
         for step in range(num_batch):
             batch_data = sampler.next_batch()
+            if batch_data is None:
+                continue
 
             if args.use_time or not args.no_time:
                 u, seq, pos, neg, time_mat = batch_data
