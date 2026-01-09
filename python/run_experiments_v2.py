@@ -374,7 +374,7 @@ class ExperimentManager:
             if gpu_id in self.running:
                 exp = self.running[gpu_id]
                 mem = self.get_gpu_memory(gpu_id)
-                mem_str = f"{mem:.1f}GB" if mem else "?"
+                mem_str = f"{mem/1024:.1f}GB" if mem else "?"
                 status = exp.status.value
                 duration = (
                     f"{time.time() - exp.start_time:.0f}s" if exp.start_time else ""
