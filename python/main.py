@@ -57,9 +57,15 @@ def get_lr(step, args):
     if args.warmup_steps > 0 and step < args.warmup_steps:
         return args.lr * (step + 1) / args.warmup_steps
     else:
-        decay_steps = step - args.warmup_steps
-        decay_factor = args.lr_decay_rate ** (decay_steps / args.lr_decay_step)
-        return args.lr * decay_factor
+        if hasattr(args, 'lr_decay_epoch') and args.lr_decay_epoch > 0:
+            epoch = step // args.steps_per_epoch
+            decay_epochs = max(0, epoch - args.warmup_steps // args.steps_per_epoch)
+            decay_factor = args.lr_decay_rate ** (decay_epochs / args.lr_decay_epoch)
+            return args.lr * decay_factor
+        else:
+            decay_steps = step - args.warmup_steps
+            decay_factor = args.lr_decay_rate ** (decay_steps / args.lr_decay_step)
+            return args.lr * decay_factor
 
 
 def is_main_process():
@@ -108,7 +114,10 @@ parser.add_argument(
 )
 parser.add_argument("--lr", default=0.001, type=float, help="初始学习率")
 parser.add_argument(
-    "--lr_decay_step", default=20, type=int, help="学习率衰减步长（按epoch）"
+    "--lr_decay_step", default=1000, type=int, help="学习率衰减步长（按step）"
+)
+parser.add_argument(
+    "--lr_decay_epoch", default=20, type=int, help="学习率衰减epoch间隔"
 )
 parser.add_argument("--lr_decay_rate", default=0.98, type=float, help="学习率衰减率")
 parser.add_argument(
@@ -314,6 +323,7 @@ if __name__ == "__main__":
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
 
     num_batch = (len(user_train) - 1) // args.batch_size + 1
+    args.steps_per_epoch = num_batch
 
     cc = 0.0
     for u in user_train:
