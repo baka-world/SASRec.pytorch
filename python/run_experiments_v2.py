@@ -528,23 +528,58 @@ class ExperimentManager:
         print(f"{Colors.ENDC}")
 
     def get_latest_output(self, exp: Experiment) -> str:
-        """获取实验的最新输出行"""
+        """获取实验的最新关键输出（专注于 loss 信息）"""
         if not exp.log_file or not os.path.exists(exp.log_file):
             return ""
         try:
             with open(exp.log_file, "r") as f:
                 lines = f.readlines()
+                if not lines:
+                    return ""
+
+                content = "".join(lines[-30:]).lower()
+
+                # 优先显示 Loss History
+                if "loss history" in content:
+                    for line in reversed(lines[-30:]):
+                        if "loss history" in line.lower():
+                            return line.strip()[:80]
+
+                # 显示最新的 Loss 和 LR
                 for line in reversed(lines[-20:]):
+                    if "loss=" in line.lower() and "lr=" in line.lower():
+                        # 提取关键信息
+                        loss_part = ""
+                        lr_part = ""
+                        if "loss=" in line.lower():
+                            idx = line.lower().rfind("loss=")
+                            if idx != -1:
+                                loss_part = line[idx:].split()[0]
+                        if "lr=" in line.lower():
+                            idx = line.lower().rfind("lr=")
+                            if idx != -1:
+                                lr_part = line[idx:].split()[0]
+                        result = f"{loss_part} {lr_part}"
+                        return result[:60] if len(result) > 60 else result
+
+                # 显示 Early Stop 信息
+                for line in reversed(lines[-30:]):
+                    if "early stop" in line.lower():
+                        return line.strip()[:60]
+
+                # 显示 NDCG/HR 信息
+                for line in reversed(lines[-20:]):
+                    if "ndcg@" in line.lower() or "hr@" in line.lower():
+                        return line.strip()[:60]
+
+                # 默认返回最后一个非 header 行
+                for line in reversed(lines[-10:]):
                     line = line.strip()
-                    if (
-                        line
-                        and not line.startswith("实验:")
-                        and not line.startswith("GPU:")
-                        and not line.startswith("命令:")
-                        and not line.startswith("开始时间:")
-                        and not line.startswith("=")
+                    if line and not any(
+                        line.startswith(x)
+                        for x in ["实验:", "GPU:", "命令:", "开始时间:", "="]
                     ):
-                        return line[:100] + ("..." if len(line) > 100 else "")
+                        return line[:60] + ("..." if len(line) > 60 else "")
                 return ""
         except:
             return ""
