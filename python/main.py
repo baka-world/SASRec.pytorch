@@ -177,7 +177,7 @@ parser.add_argument(
 parser.add_argument(
     "--use_amp",
     action="store_true",
-    default=True,
+    default=False,
     help="启用自动混合精度训练（节省显存）",
 )
 
@@ -328,7 +328,10 @@ if __name__ == "__main__":
     time_span = args.time_span if args.use_time or not args.no_time else 0
     sampler = get_sampler(user_train, usernum, itemnum, time_span)
 
-    model = get_model(usernum, itemnum, time_span).to(args.local_rank)
+    device = torch.device(args.device)
+    if args.multi_gpu:
+        device = torch.device(args.local_rank)
+    model = get_model(usernum, itemnum, time_span).to(device)
 
     for name, param in model.named_parameters():
         try:
@@ -355,11 +358,7 @@ if __name__ == "__main__":
     epoch_start_idx = 1
     if args.state_dict_path is not None:
         try:
-            model.load_state_dict(
-                torch.load(
-                    args.state_dict_path, map_location=torch.device(args.local_rank)
-                )
-            )
+            model.load_state_dict(torch.load(args.state_dict_path, map_location=device))
             tail = args.state_dict_path[args.state_dict_path.find("epoch=") + 6 :]
             epoch_start_idx = int(tail[: tail.find(".")]) + 1
         except:
@@ -380,7 +379,8 @@ if __name__ == "__main__":
 
     bce_criterion = torch.nn.BCEWithLogitsLoss()
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
-    scaler = amp.GradScaler("cuda") if args.use_amp else None
+    use_amp = args.use_amp and torch.cuda.is_available()
+    scaler = amp.GradScaler("cuda") if use_amp else None
 
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
@@ -406,7 +406,7 @@ if __name__ == "__main__":
                     np.array(neg),
                     np.array(time_mat),
                 )
-                with amp.autocast("cuda", enabled=args.use_amp):
+                with amp.autocast(enabled=use_amp):
                     pos_logits, neg_logits = model(u, seq, time_mat, pos, neg)
             else:
                 u, seq, pos, neg = batch_data
@@ -416,12 +416,12 @@ if __name__ == "__main__":
                     np.array(pos),
                     np.array(neg),
                 )
-                with amp.autocast("cuda", enabled=args.use_amp):
+                with amp.autocast(enabled=use_amp):
                     pos_logits, neg_logits = model(u, seq, pos, neg)
 
             pos_labels, neg_labels = (
-                torch.ones(pos_logits.shape, device=args.local_rank),
-                torch.zeros(neg_logits.shape, device=args.local_rank),
+                torch.ones(pos_logits.shape, device=device),
+                torch.zeros(neg_logits.shape, device=device),
             )
 
             adam_optimizer.zero_grad()
@@ -430,7 +430,11 @@ if __name__ == "__main__":
             loss = bce_criterion(pos_logits[indices], pos_labels[indices])
             loss += bce_criterion(neg_logits[indices], neg_labels[indices])
 
-            for param in model.module.item_emb.parameters():
+            for param in (
+                model.module.item_emb.parameters()
+                if hasattr(model, "module")
+                else model.item_emb.parameters()
+            ):
                 loss += args.l2_emb * torch.sum(param**2)
 
             if args.use_amp:
