@@ -552,10 +552,16 @@ if __name__ == "__main__":
                                 print(
                                     f"[Early Stop] ⚠️  连续 {early_stop_counter}/{args.early_stop_patience} 次无改善"
                                 )
-                        else:
+                        elif recent_change < -args.early_stop_threshold:
                             early_stop_counter = 0
                             if is_main_process():
                                 print(f"[Early Stop] ✓ Loss正在改善，重置计数器")
+                        else:
+                            early_stop_counter += 1
+                            if is_main_process():
+                                print(
+                                    f"[Early Stop] ⚠️  Loss变差: {recent_change * 100:.2f}%"
+                                )
 
                         if early_stop_counter >= args.early_stop_patience:
                             if is_main_process():
