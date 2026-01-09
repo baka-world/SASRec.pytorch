@@ -108,7 +108,7 @@ parser.add_argument(
 )
 parser.add_argument("--lr", default=0.001, type=float, help="初始学习率")
 parser.add_argument(
-    "--lr_decay_step", default=20, type=int, help="学习率衰减步长（按epoch）"
+    "--lr_decay_step", default=1000, type=int, help="学习率衰减步长（按epoch）"
 )
 parser.add_argument("--lr_decay_rate", default=0.98, type=float, help="学习率衰减率")
 parser.add_argument(
