@@ -315,6 +315,10 @@ class ExperimentManager:
                     return True
 
                 result = has_loss or has_lr or has_epoch
+                if not result:
+                    print(
+                        f"  DEBUG {exp.name}: loss={has_loss}, lr={has_lr}, epoch={has_epoch}, content_preview={content[:50]}"
+                    )
                 return result
         except Exception as e:
             print(f"  DEBUG: is_ready error: {e}")
