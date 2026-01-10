@@ -460,30 +460,20 @@ def discretize_time_interval(time_diff, time_span, unit="hour"):
     """
     将时间间隔离散化到指定范围
 
-    使用对数变换来更好地捕捉不同时间尺度的差异：
-    - 对于短时间间隔（秒/分钟级别），有较高的分辨率
-    - 对于长时间间隔（天/月/年级别），仍然可以区分
-
-    公式: discretized = min(time_span, log2(1 + time_diff / 3600)) + 1
-    这样 time_span=100 大约可以区分从1秒到2^100秒（约10亿年）的时间差
+    与pmixer/TiSASRec.pytorch实现一致：
+    直接使用原始时间戳差值，超过time_span则钳制
 
     参数:
         time_diff: 时间间隔（秒）
         time_span: 最大离散化值
-        unit: 时间单位（此实现中统一按秒处理）
+        unit: 时间单位（未使用，保持与参考实现一致）
 
     返回:
         离散化后的时间间隔值
     """
-    if time_diff <= 0:
-        return 0
-
-    log_val = np.log2(1 + time_diff / 3600)  # 转换为小时单位后取对数
-    discretized = int(log_val) + 1
-
+    discretized = time_diff
     if discretized > time_span:
         discretized = time_span
-
     return discretized
 
 
