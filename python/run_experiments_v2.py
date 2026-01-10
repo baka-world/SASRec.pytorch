@@ -229,28 +229,38 @@ class ExperimentManager:
 
         # 后台线程监控输出
         def monitor_output():
-            for line in process.stdout:
-                with open(exp.log_file, "a") as f:
-                    f.write(line)
-            process.wait()
+            try:
+                for line in process.stdout:
+                    with open(exp.log_file, "a") as f:
+                        f.write(line)
+                process.wait()
 
-            exp.end_time = time.time()
-            if process.returncode == 0:
-                exp.status = Status.COMPLETED
-                # 解析结果
-                self.parse_results(exp)
-            else:
+                exp.end_time = time.time()
+                if process.returncode == 0:
+                    exp.status = Status.COMPLETED
+                    self.parse_results(exp)
+                    print(
+                        f"  {Colors.GREEN}实验完成: {exp.name} (NDCG@10: {exp.ndcg10 or 'N/A'}){Colors.ENDC}"
+                    )
+                else:
+                    exp.status = Status.FAILED
+                    exp.error = f"返回码: {process.returncode}"
+                    print(
+                        f"  {Colors.RED}实验失败: {exp.name} (返回码: {process.returncode}){Colors.ENDC}"
+                    )
+
+                # 保存结果
+                self.save_results()
+
+                # 从运行列表移除
+                if exp.gpu in self.running and exp in self.running[exp.gpu]:
+                    self.running[exp.gpu].remove(exp)
+                    if not self.running[exp.gpu]:
+                        del self.running[exp.gpu]
+            except Exception as e:
+                print(f"  {Colors.RED}监控异常: {exp.name} - {e}{Colors.ENDC}")
                 exp.status = Status.FAILED
-                exp.error = f"返回码: {process.returncode}"
-
-            # 保存结果
-            self.save_results()
-
-            # 从运行列表移除
-            if exp.gpu in self.running and exp in self.running[exp.gpu]:
-                self.running[exp.gpu].remove(exp)
-                if not self.running[exp.gpu]:
-                    del self.running[exp.gpu]
+                exp.error = str(e)
 
         thread = threading.Thread(target=monitor_output, daemon=True)
         thread.start()
