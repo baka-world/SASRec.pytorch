@@ -338,16 +338,38 @@ class ExperimentManager:
         """获取指定 GPU 上所有运行中的实验（通过 PID 检查进程状态）"""
         result = []
         for exp in self.running.get(gpu_id, []):
-            if exp.status != Status.RUNNING:
+            if exp.status == Status.COMPLETED or exp.status == Status.FAILED:
                 continue
-            # 通过 PID 检查进程是否真的在运行
+
             if exp.pid is not None:
                 try:
                     os.kill(exp.pid, 0)  # 信号 0 只检查进程是否存在
                 except ProcessLookupError:
-                    # 进程不存在，标记为失败
-                    exp.status = Status.FAILED
-                    exp.error = "进程意外终止"
+                    # 进程不存在，检查是否正常结束
+                    if exp.status == Status.RUNNING:
+                        # 进程已结束但状态未更新，尝试解析结果
+                        if os.path.exists(exp.log_file):
+                            with open(exp.log_file, "r") as f:
+                                content = f.read()
+                                if "test (NDCG@10:" in content:
+                                    exp.status = Status.COMPLETED
+                                    self.parse_results(exp)
+                                    print(
+                                        f"  {Colors.GREEN}检测到完成: {exp.name} (NDCG@10: {exp.ndcg10 or 'N/A'}){Colors.ENDC}"
+                                    )
+                                else:
+                                    exp.status = Status.FAILED
+                                    exp.error = "进程意外终止"
+                                    print(
+                                        f"  {Colors.RED}检测到失败: {exp.name} (进程已结束但未找到结果){Colors.ENDC}"
+                                    )
+                        else:
+                            exp.status = Status.FAILED
+                            exp.error = "进程意外终止"
+                        # 从运行列表移除
+                        if exp.gpu in self.running and exp in self.running[exp.gpu]:
+                            self.running[exp.gpu].remove(exp)
+                        self.save_results()
                     continue
             result.append(exp)
         return result
