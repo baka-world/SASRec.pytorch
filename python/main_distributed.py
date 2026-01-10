@@ -126,7 +126,7 @@ parser.add_argument("--lr_decay_step", default=1000, type=int, help="学习率�
 parser.add_argument("--lr_decay_rate", default=0.98, type=float, help="学习率衰减率")
 parser.add_argument("--warmup_steps", default=200, type=int, help="Warmup步数")
 parser.add_argument("--maxlen", default=200, type=int, help="序列的最大长度")
-parser.add_argument("--hidden_units", default=50, type=int, help="隐藏层维度")
+parser.add_argument("--hidden_units", default=100, type=int, help="隐藏层维度")
 parser.add_argument("--num_blocks", default=2, type=int, help="Transformer编码器块数量")
 parser.add_argument("--num_epochs", default=1000, type=int, help="训练轮数")
 parser.add_argument("--num_heads", default=2, type=int, help="多头注意力头数")

@@ -811,13 +811,13 @@ def get_experiments() -> List[tuple]:
     experiments = []
 
     # ===== 对比实验 (E1-E4) =====
-    # 与pmixer/TiSASRec.pytorch超参数一致: lr=0.001, hidden_units=50
+    # 与pmixer/TiSASRec.pytorch超参数一致: lr=0.001, hidden_units=100
     experiments.append(
         (
             "exp_e1_sasrec",
             -1,
             "--dataset=ml-1m --train_dir=exp_e1_sasrec --no_time --no_mhc "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
         )
     )
 
@@ -826,7 +826,7 @@ def get_experiments() -> List[tuple]:
             "exp_e2_sasrec_mhc",
             -1,
             "--dataset=ml-1m --train_dir=exp_e2_sasrec_mhc --no_time "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
         )
     )
 
@@ -835,7 +835,7 @@ def get_experiments() -> List[tuple]:
             "exp_e3_tisasrec",
             -1,
             "--dataset=ml-1m --train_dir=exp_e3_tisasrec --no_mhc "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -844,111 +844,112 @@ def get_experiments() -> List[tuple]:
             "exp_e4_tisasrec_mhc",
             -1,
             "--dataset=ml-1m --train_dir=exp_e4_tisasrec_mhc "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
         )
     )
 
     # ===== 调参实验 (T1-T12) =====
-    # 与pmixer超参数一致: lr=0.001, hidden_units=50, time_span=256
-    # GPU 1: batch & hidden & n
+    # 基于 E4 (hidden_units=100) 的基础上探索其他超参数
+    # GPU 1: num_blocks 探索
     experiments.append(
         (
-            "tune_t1_batch512",
+            "tune_t1_nblocks3",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t1_batch512 --batch_size 512 "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t1_nblocks3 --num_blocks 3 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
     experiments.append(
         (
-            "tune_t2_h150_n4",
+            "tune_t2_nblocks4",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t2_h150_n4 --hidden_units 150 "
-            "--maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t2_nblocks4 --num_blocks 4 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
     experiments.append(
         (
-            "tune_t3_h150_batch512",
+            "tune_t3_nblocks6",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t3_h150_batch512 --hidden_units 150 --batch_size 512 "
-            "--maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t3_nblocks6 --num_blocks 6 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+        )
+    )
+
+    # GPU 2: num_heads 探索 (hidden_units=100 可被 4, 5 整除)
+    experiments.append(
+        (
+            "tune_t4_nheads4",
+            -1,
+            "--dataset=ml-1m --train_dir=tune_t4_nheads4 --num_heads 4 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
     experiments.append(
         (
-            "tune_t4_n8",
+            "tune_t5_nheads5",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t4_n8 --mhc_expansion_rate 8 "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --num_epochs 1000 --time_span 256",
-        )
-    )
-
-    # GPU 2: n & maxlen
-    experiments.append(
-        (
-            "tune_t5_n12",
-            -1,
-            "--dataset=ml-1m --train_dir=tune_t5_n12 --mhc_expansion_rate 12 "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t5_nheads5 --num_heads 5 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
     experiments.append(
         (
-            "tune_t6_maxlen100",
+            "tune_t6_nblocks3_nheads4",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t6_maxlen100 --maxlen 100 "
-            "--hidden_units 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t6_nblocks3_nheads4 --num_blocks 3 --num_heads 4 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+        )
+    )
+
+    # GPU 3: dropout & lr 探索
+    experiments.append(
+        (
+            "tune_t7_dropout01",
+            -1,
+            "--dataset=ml-1m --train_dir=tune_t7_dropout01 --dropout_rate 0.1 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
     experiments.append(
         (
-            "tune_t7_max100_n8",
+            "tune_t8_dropout03",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t7_max100_n8 --maxlen 100 --mhc_expansion_rate 8 "
-            "--hidden_units 50 --lr 0.01 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t8_dropout03 --dropout_rate 0.3 "
+            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
     experiments.append(
         (
-            "tune_t8_h150_n8_max100",
+            "tune_t9_lr0005",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t8_h150_n8_max100 --hidden_units 150 --maxlen 100 --mhc_expansion_rate 8 "
-            "--lr 0.01 --num_epochs 1000 --time_span 256",
-        )
-    )
-
-    # GPU 3: 极限探索
-    experiments.append(
-        (
-            "tune_t9_h200_n8",
-            -1,
-            "--dataset=ml-1m --train_dir=tune_t9_h200_n8 --hidden_units 200 --mhc_expansion_rate 8 "
-            "--maxlen 50 --lr 0.01 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t9_lr0005 --lr 0.0005 "
+            "--hidden_units 100 --maxlen 50 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
     experiments.append(
         (
-            "tune_t10_batch1024",
+            "tune_t10_lr002",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t10_batch1024 --batch_size 1024 "
-            "--hidden_units 50 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t10_lr002 --lr 0.002 "
+            "--hidden_units 100 --maxlen 50 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
+    # GPU 4: maxlen & 组合探索
     experiments.append(
         (
-            "tune_t11_h200_n12",
+            "tune_t11_maxlen100",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t11_h200_n12 --hidden_units 200 --mhc_expansion_rate 12 "
-            "--maxlen 50 --lr 0.01 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t11_maxlen100 --maxlen 100 "
+            "--hidden_units 100 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -956,8 +957,8 @@ def get_experiments() -> List[tuple]:
         (
             "tune_t12_best_guess",
             -1,
-            "--dataset=ml-1m --train_dir=tune_t12_best_guess --hidden_units 150 --maxlen 100 --mhc_expansion_rate 8 "
-            "--lr 0.01 --batch_size 256 --num_epochs 1000 --time_span 256",
+            "--dataset=ml-1m --train_dir=tune_t12_best_guess --num_blocks 3 --num_heads 4 --maxlen 100 "
+            "--hidden_units 100 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 

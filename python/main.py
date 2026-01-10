@@ -115,7 +115,7 @@ parser.add_argument(
     "--warmup_steps", default=200, type=int, help="Warmup步数（0表示不使用warmup）"
 )
 parser.add_argument("--maxlen", default=200, type=int, help="序列的最大长度")
-parser.add_argument("--hidden_units", default=50, type=int, help="隐藏层维度")
+parser.add_argument("--hidden_units", default=100, type=int, help="隐藏层维度")
 parser.add_argument(
     "--num_blocks", default=2, type=int, help="Transformer编码器块的数量"
 )
