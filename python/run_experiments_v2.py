@@ -817,7 +817,7 @@ def get_experiments() -> List[tuple]:
             "exp_e1_sasrec",
             -1,
             "--dataset=ml-1m --train_dir=exp_e1_sasrec --no_time --no_mhc "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
         )
     )
 
@@ -826,7 +826,7 @@ def get_experiments() -> List[tuple]:
             "exp_e2_sasrec_mhc",
             -1,
             "--dataset=ml-1m --train_dir=exp_e2_sasrec_mhc --no_time "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000",
         )
     )
 
@@ -835,7 +835,7 @@ def get_experiments() -> List[tuple]:
             "exp_e3_tisasrec",
             -1,
             "--dataset=ml-1m --train_dir=exp_e3_tisasrec --no_mhc "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -844,7 +844,7 @@ def get_experiments() -> List[tuple]:
             "exp_e4_tisasrec_mhc",
             -1,
             "--dataset=ml-1m --train_dir=exp_e4_tisasrec_mhc "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --dropout_rate 0.2 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -856,7 +856,7 @@ def get_experiments() -> List[tuple]:
             "tune_t1_nblocks3",
             -1,
             "--dataset=ml-1m --train_dir=tune_t1_nblocks3 --num_blocks 3 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -865,7 +865,7 @@ def get_experiments() -> List[tuple]:
             "tune_t2_nblocks4",
             -1,
             "--dataset=ml-1m --train_dir=tune_t2_nblocks4 --num_blocks 4 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -874,7 +874,7 @@ def get_experiments() -> List[tuple]:
             "tune_t3_nblocks6",
             -1,
             "--dataset=ml-1m --train_dir=tune_t3_nblocks6 --num_blocks 6 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -884,7 +884,7 @@ def get_experiments() -> List[tuple]:
             "tune_t4_nheads4",
             -1,
             "--dataset=ml-1m --train_dir=tune_t4_nheads4 --num_heads 4 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -893,7 +893,7 @@ def get_experiments() -> List[tuple]:
             "tune_t5_nheads5",
             -1,
             "--dataset=ml-1m --train_dir=tune_t5_nheads5 --num_heads 5 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -902,7 +902,7 @@ def get_experiments() -> List[tuple]:
             "tune_t6_nblocks3_nheads4",
             -1,
             "--dataset=ml-1m --train_dir=tune_t6_nblocks3_nheads4 --num_blocks 3 --num_heads 4 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -912,7 +912,7 @@ def get_experiments() -> List[tuple]:
             "tune_t7_dropout01",
             -1,
             "--dataset=ml-1m --train_dir=tune_t7_dropout01 --dropout_rate 0.1 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -921,7 +921,7 @@ def get_experiments() -> List[tuple]:
             "tune_t8_dropout03",
             -1,
             "--dataset=ml-1m --train_dir=tune_t8_dropout03 --dropout_rate 0.3 "
-            "--hidden_units 100 --maxlen 50 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --lr 0.01 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -930,7 +930,7 @@ def get_experiments() -> List[tuple]:
             "tune_t9_lr0005",
             -1,
             "--dataset=ml-1m --train_dir=tune_t9_lr0005 --lr 0.0005 "
-            "--hidden_units 100 --maxlen 50 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
@@ -939,7 +939,7 @@ def get_experiments() -> List[tuple]:
             "tune_t10_lr002",
             -1,
             "--dataset=ml-1m --train_dir=tune_t10_lr002 --lr 0.002 "
-            "--hidden_units 100 --maxlen 50 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
+            "--hidden_units 100 --maxlen 200 --mhc_expansion_rate 4 --num_epochs 1000 --time_span 256",
         )
     )
 
