@@ -460,21 +460,30 @@ def discretize_time_interval(time_diff, time_span, unit="hour"):
     """
     将时间间隔离散化到指定范围
 
+    使用对数变换来更好地捕捉不同时间尺度的差异：
+    - 对于短时间间隔（秒/分钟级别），有较高的分辨率
+    - 对于长时间间隔（天/月/年级别），仍然可以区分
+
+    公式: discretized = min(time_span, log2(1 + time_diff / 3600)) + 1
+    这样 time_span=100 大约可以区分从1秒到2^100秒（约10亿年）的时间差
+
     参数:
         time_diff: 时间间隔（秒）
         time_span: 最大离散化值
-        unit: 时间单位 ('second', 'minute', 'hour', 'day')
+        unit: 时间单位（此实现中统一按秒处理）
 
     返回:
         离散化后的时间间隔值
     """
-    unit_seconds = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
-    divisor = unit_seconds.get(unit, 3600)
+    if time_diff <= 0:
+        return 0
 
-    # 线性离散化，然后钳制到 [0, time_span]
-    # 注意：允许返回 0 用于填充
-    discretized = int(time_diff // divisor) + 1
-    discretized = max(0, min(time_span, discretized))
+    log_val = np.log2(1 + time_diff / 3600)  # 转换为小时单位后取对数
+    discretized = int(log_val) + 1
+
+    if discretized > time_span:
+        discretized = time_span
+
     return discretized
 
 
