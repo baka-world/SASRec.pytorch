@@ -482,7 +482,7 @@ def compute_time_matrix_for_user(history, maxlen, time_span, unit="hour"):
     """
     为单个用户计算时间间隔矩阵
 
-    对于序列中每个位置i，计算与之后所有位置j的时间间隔
+    对于序列中每个位置i，计算与所有位置j的时间间隔
 
     参数:
         history: 用户交互历史列表，每个元素是包含'iid'和'timestamp'的字典
@@ -499,11 +499,13 @@ def compute_time_matrix_for_user(history, maxlen, time_span, unit="hour"):
     # 提取时间戳
     timestamps = [item["timestamp"] for item in history[:seq_len]]
 
-    # 计算时间间隔矩阵
+    # 计算时间间隔矩阵（参考TiSASRec论文的computeRePos函数）
+    # 计算任意两个位置之间的绝对时间差
     for i in range(seq_len):
-        for j in range(i + 1, seq_len):
-            # 时间间隔 = later_time - earlier_time
-            time_diff = timestamps[j] - timestamps[i]
+        for j in range(seq_len):
+            # 绝对时间差（与参考实现保持一致）
+            time_diff = abs(timestamps[i] - timestamps[j])
+            # 离散化并钳制到 [0, time_span]
             time_matrix[i, j] = discretize_time_interval(time_diff, time_span, unit)
 
     return time_matrix
@@ -910,13 +912,17 @@ def compute_time_matrix(users, maxlen, time_span, user_train):
         u = users[b]
         user_items = user_train[u]
 
+        # 提取时间戳
+        timestamps = [
+            item["timestamp"] if isinstance(item, dict) else 0 for item in user_items
+        ]
+
         for i in range(len(user_items)):
             for j in range(len(user_items)):
                 if i < maxlen and j < maxlen:
-                    time_diff = abs(i - j)
-                    if time_diff <= time_span:
-                        time_mat[b, i, j] = time_diff
-                    else:
-                        time_mat[b, i, j] = time_span
+                    # 计算任意两个位置之间的绝对时间差
+                    time_diff = abs(timestamps[i] - timestamps[j])
+                    # 钳制到 [0, time_span]
+                    time_mat[b, i, j] = min(time_diff, time_span)
 
     return time_mat

@@ -301,19 +301,10 @@ class mHCResidual(torch.nn.Module):
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x, function_output):
-        """
-        前向传播
-
-        参数:
-            x: 输入张量，形状为 (batch_size, seq_len, C)
-            function_output: 残差函数F的输出，形状为 (batch_size, seq_len, C)
-
-        返回:
-            输出张量，形状为 (batch_size, seq_len, C)
-        """
         if self.mhc_no_amp and torch.cuda.is_available():
-            with torch.amp.autocast("cuda", enabled=False):
+            with torch.cuda.amp.autocast(enabled=False):
                 return self._forward_impl(x, function_output)
+        return self._forward_impl(x, function_output)
         return self._forward_impl(x, function_output)
 
     def _forward_impl(self, x, function_output):
@@ -426,13 +417,11 @@ class TiSASRec(torch.nn.Module):
 
         self.user_num = user_num
         self.item_num = item_num
-        self.time_span = time_span
         self.dev = args.device
 
         self.use_mhc = not getattr(args, "no_mhc", False)
         self.mhc_expansion_rate = getattr(args, "mhc_expansion_rate", 4)
         self.mhc_no_amp = getattr(args, "mhc_no_amp", False)
-        self.norm_first = getattr(args, "norm_first", False)
 
         self.item_emb = torch.nn.Embedding(
             self.item_num + 1, args.hidden_units, padding_idx=0
@@ -449,7 +438,6 @@ class TiSASRec(torch.nn.Module):
             args.time_span + 1, args.hidden_units
         )
 
-        self.item_emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
         self.abs_pos_K_emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
         self.abs_pos_V_emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
         self.time_matrix_K_dropout = torch.nn.Dropout(p=args.dropout_rate)
@@ -464,14 +452,10 @@ class TiSASRec(torch.nn.Module):
             self.mhc_attn = torch.nn.ModuleList()
             self.mhc_ffn = torch.nn.ModuleList()
 
-        self.last_layernorm = torch.nn.LayerNorm(
-            args.hidden_units, eps=args.layer_norm_eps
-        )
+        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
 
         for _ in range(args.num_blocks):
-            new_attn_layernorm = torch.nn.LayerNorm(
-                args.hidden_units, eps=args.layer_norm_eps
-            )
+            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
             self.attention_layernorms.append(new_attn_layernorm)
 
             new_attn_layer = TimeAwareMultiHeadAttention(
@@ -479,9 +463,7 @@ class TiSASRec(torch.nn.Module):
             )
             self.attention_layers.append(new_attn_layer)
 
-            new_fwd_layernorm = torch.nn.LayerNorm(
-                args.hidden_units, eps=args.layer_norm_eps
-            )
+            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
             self.forward_layernorms.append(new_fwd_layernorm)
 
             new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)
@@ -504,27 +486,24 @@ class TiSASRec(torch.nn.Module):
                 )
 
     def seq2feats(self, user_ids, log_seqs, time_matrices):
-        seqs = self.item_emb(torch.as_tensor(log_seqs, device=self.dev))
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
         seqs *= self.item_emb.embedding_dim**0.5
         seqs = self.item_emb_dropout(seqs)
 
-        positions = np.tile(np.arange(log_seqs.shape[1]), [log_seqs.shape[0], 1])
-        positions = torch.as_tensor(positions, device=self.dev)
+        positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
+        positions = torch.LongTensor(positions).to(self.dev)
         abs_pos_K = self.abs_pos_K_emb(positions)
         abs_pos_V = self.abs_pos_V_emb(positions)
         abs_pos_K = self.abs_pos_K_emb_dropout(abs_pos_K)
         abs_pos_V = self.abs_pos_V_emb_dropout(abs_pos_V)
 
-        time_matrices = torch.as_tensor(time_matrices, device=self.dev)
-        time_matrices = torch.clamp(time_matrices, min=0, max=self.time_span)
-        time_matrix_K = self.time_matrix_K_emb(time_matrices).float()
-        time_matrix_V = self.time_matrix_V_emb(time_matrices).float()
+        time_matrices = torch.LongTensor(time_matrices).to(self.dev)
+        time_matrix_K = self.time_matrix_K_emb(time_matrices)
+        time_matrix_V = self.time_matrix_V_emb(time_matrices)
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
         time_matrix_V = self.time_matrix_V_dropout(time_matrix_V)
 
-        timeline_mask = torch.as_tensor(
-            log_seqs == 0, dtype=torch.bool, device=self.dev
-        )
+        timeline_mask = torch.BoolTensor(log_seqs == 0).to(self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1)
 
         tl = seqs.shape[1]
@@ -533,62 +512,31 @@ class TiSASRec(torch.nn.Module):
         )
 
         for i in range(len(self.attention_layers)):
-            if self.norm_first:
-                # Pre-LN结构：先LayerNorm，再注意力，再残差连接
-                Q = self.attention_layernorms[i](seqs)
+            Q = self.attention_layernorms[i](seqs)
 
-                mha_outputs = self.attention_layers[i](
-                    Q,
-                    seqs,
-                    timeline_mask,
-                    attention_mask,
-                    time_matrix_K,
-                    time_matrix_V,
-                    abs_pos_K,
-                    abs_pos_V,
-                )
+            mha_outputs = self.attention_layers[i](
+                Q,
+                seqs,
+                timeline_mask,
+                attention_mask,
+                time_matrix_K,
+                time_matrix_V,
+                abs_pos_K,
+                abs_pos_V,
+            )
 
-                if self.use_mhc:
-                    seqs = self.mhc_attn[i](seqs, mha_outputs)
-                else:
-                    seqs = Q + mha_outputs
-
-                seqs = self.forward_layernorms[i](seqs)
-                ffn_output = self.forward_layers[i](seqs)
-
-                if self.use_mhc:
-                    seqs = self.mhc_ffn[i](seqs, ffn_output)
-                else:
-                    seqs = seqs + ffn_output
+            if self.use_mhc:
+                seqs = self.mhc_attn[i](seqs, mha_outputs)
             else:
-                # Post-LN结构：先注意力，再LayerNorm，再残差连接
-                # 使用seqs作为Q，K，V（不经过LayerNorm）
-                mha_outputs = self.attention_layers[i](
-                    seqs,
-                    seqs,
-                    timeline_mask,
-                    attention_mask,
-                    time_matrix_K,
-                    time_matrix_V,
-                    abs_pos_K,
-                    abs_pos_V,
-                )
+                seqs = Q + mha_outputs
 
-                # 残差连接后应用LayerNorm
-                if self.use_mhc:
-                    seqs = self.mhc_attn[i](seqs, mha_outputs)
-                    seqs = self.attention_layernorms[i](seqs)
-                else:
-                    seqs = self.attention_layernorms[i](seqs + mha_outputs)
+            seqs = self.forward_layernorms[i](seqs)
+            ffn_output = self.forward_layers[i](seqs)
 
-                ffn_output = self.forward_layers[i](seqs)
-
-                # 残差连接后应用LayerNorm
-                if self.use_mhc:
-                    seqs = self.mhc_ffn[i](seqs, ffn_output)
-                    seqs = self.forward_layernorms[i](seqs)
-                else:
-                    seqs = self.forward_layernorms[i](seqs + ffn_output)
+            if self.use_mhc:
+                seqs = self.mhc_ffn[i](seqs, ffn_output)
+            else:
+                seqs = seqs + ffn_output
 
             seqs *= ~timeline_mask.unsqueeze(-1)
 
@@ -599,8 +547,8 @@ class TiSASRec(torch.nn.Module):
     def forward(self, user_ids, log_seqs, time_matrices, pos_seqs, neg_seqs):
         log_feats = self.seq2feats(user_ids, log_seqs, time_matrices)
 
-        pos_embs = self.item_emb(torch.as_tensor(pos_seqs, device=self.dev))
-        neg_embs = self.item_emb(torch.as_tensor(neg_seqs, device=self.dev))
+        pos_embs = self.item_emb(torch.LongTensor(pos_seqs).to(self.dev))
+        neg_embs = self.item_emb(torch.LongTensor(neg_seqs).to(self.dev))
 
         pos_logits = (log_feats * pos_embs).sum(dim=-1)
         neg_logits = (log_feats * neg_embs).sum(dim=-1)
@@ -612,7 +560,7 @@ class TiSASRec(torch.nn.Module):
 
         final_feat = log_feats[:, -1, :]
 
-        item_embs = self.item_emb(torch.as_tensor(item_indices, device=self.dev))
+        item_embs = self.item_emb(torch.LongTensor(item_indices).to(self.dev))
 
         logits = item_embs.matmul(final_feat.unsqueeze(-1)).squeeze(-1)
 

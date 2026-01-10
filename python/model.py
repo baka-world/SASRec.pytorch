@@ -290,9 +290,7 @@ class TiSASRec(torch.nn.Module):
 
         self.user_num = user_num
         self.item_num = item_num
-        self.time_span = time_span
         self.dev = args.device
-        self.norm_first = getattr(args, "norm_first", False)
 
         # 物品嵌入层
         self.item_emb = torch.nn.Embedding(
@@ -300,11 +298,11 @@ class TiSASRec(torch.nn.Module):
         )
         self.item_emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
-        # 绝对位置嵌入（与SASRec相同）
+        # 绝对位置嵌入
         self.abs_pos_K_emb = torch.nn.Embedding(args.maxlen, args.hidden_units)
         self.abs_pos_V_emb = torch.nn.Embedding(args.maxlen, args.hidden_units)
 
-        # 时间矩阵嵌入（核心创新：学习时间间隔的向量表示）
+        # 时间矩阵嵌入（核心创新）
         self.time_matrix_K_emb = torch.nn.Embedding(
             args.time_span + 1, args.hidden_units
         )
@@ -313,7 +311,6 @@ class TiSASRec(torch.nn.Module):
         )
 
         # Dropout层
-        self.item_emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
         self.abs_pos_K_emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
         self.abs_pos_V_emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
         self.time_matrix_K_dropout = torch.nn.Dropout(p=args.dropout_rate)
@@ -325,31 +322,22 @@ class TiSASRec(torch.nn.Module):
         self.forward_layernorms = torch.nn.ModuleList()
         self.forward_layers = torch.nn.ModuleList()
 
-        self.last_layernorm = torch.nn.LayerNorm(
-            args.hidden_units, eps=args.layer_norm_eps
-        )
+        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
 
-        # 构建多个时序感知Transformer编码器块
+        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
+
         for _ in range(args.num_blocks):
-            # 自注意力前的LayerNorm
-            new_attn_layernorm = torch.nn.LayerNorm(
-                args.hidden_units, eps=args.layer_norm_eps
-            )
+            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
             self.attention_layernorms.append(new_attn_layernorm)
 
-            # 时序感知多头注意力层（核心创新）
             new_attn_layer = TimeAwareMultiHeadAttention(
                 args.hidden_units, args.num_heads, args.dropout_rate, args.device
             )
             self.attention_layers.append(new_attn_layer)
 
-            # 前馈网络前的LayerNorm
-            new_fwd_layernorm = torch.nn.LayerNorm(
-                args.hidden_units, eps=args.layer_norm_eps
-            )
+            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
             self.forward_layernorms.append(new_fwd_layernorm)
 
-            # 点式前馈网络
             new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)
             self.forward_layers.append(new_fwd_layer)
 
@@ -373,35 +361,28 @@ class TiSASRec(torch.nn.Module):
             log_feats: 序列的特征表示，形状为 (batch_size, seq_len, hidden_units)
         """
         # 物品嵌入
-        seqs = self.item_emb(
-            torch.as_tensor(log_seqs, dtype=torch.long, device=self.dev)
-        )
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
         seqs *= self.item_emb.embedding_dim**0.5
         seqs = self.item_emb_dropout(seqs)
 
         # 绝对位置嵌入
-        positions = np.tile(np.arange(log_seqs.shape[1]), [log_seqs.shape[0], 1])
-        positions = torch.as_tensor(positions, dtype=torch.long, device=self.dev)
+        positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
+        positions = torch.LongTensor(positions).to(self.dev)
         abs_pos_K = self.abs_pos_K_emb(positions)
         abs_pos_V = self.abs_pos_V_emb(positions)
         abs_pos_K = self.abs_pos_K_emb_dropout(abs_pos_K)
         abs_pos_V = self.abs_pos_V_emb_dropout(abs_pos_V)
 
-        # 时间矩阵嵌入（核心创新）
-        time_matrices = torch.as_tensor(
-            time_matrices, dtype=torch.long, device=self.dev
-        )
+        time_matrices = torch.LongTensor(time_matrices).to(self.dev)
         time_matrix_K = self.time_matrix_K_emb(time_matrices)
         time_matrix_V = self.time_matrix_V_emb(time_matrices)
         time_matrix_K = self.time_matrix_K_dropout(time_matrix_K)
         time_matrix_V = self.time_matrix_V_dropout(time_matrix_V)
 
-        log_seqs = torch.as_tensor(log_seqs, dtype=torch.long, device=self.dev)
-        # 掩码：标记padding位置（物品ID为0）
-        timeline_mask = (log_seqs == 0).to(self.dev)
+        # mask 0th items(placeholder for dry-run) in log_seqs
+        timeline_mask = torch.BoolTensor(log_seqs == 0).to(self.dev)
         seqs *= ~timeline_mask.unsqueeze(-1)
 
-        # 因果注意力掩码：防止信息泄露
         tl = seqs.shape[1]
         attention_mask = ~torch.tril(
             torch.ones((tl, tl), dtype=torch.bool, device=self.dev)
@@ -409,49 +390,23 @@ class TiSASRec(torch.nn.Module):
 
         # 依次通过每个时序感知Transformer编码器块
         for i in range(len(self.attention_layers)):
-            if self.norm_first:
-                # Pre-LN结构：先LayerNorm，再注意力，再残差连接
-                Q = self.attention_layernorms[i](seqs)
+            # Pre-LN结构：先LayerNorm，再注意力，再残差连接（与参考实现一致）
+            Q = self.attention_layernorms[i](seqs)
+            mha_outputs = self.attention_layers[i](
+                Q,
+                seqs,
+                timeline_mask,
+                attention_mask,
+                time_matrix_K,
+                time_matrix_V,
+                abs_pos_K,
+                abs_pos_V,
+            )
+            seqs = Q + mha_outputs
 
-                # 时序感知自注意力计算
-                mha_outputs = self.attention_layers[i](
-                    Q,
-                    seqs,
-                    timeline_mask,
-                    attention_mask,
-                    time_matrix_K,
-                    time_matrix_V,
-                    abs_pos_K,
-                    abs_pos_V,
-                )
-
-                # 残差连接
-                seqs = Q + mha_outputs
-
-                # FFN部分
-                seqs = self.forward_layernorms[i](seqs)
-                seqs = self.forward_layers[i](seqs)
-            else:
-                # Post-LN结构：先注意力，再LayerNorm，再残差连接
-                # 使用seqs作为Q，K，V（不经过LayerNorm）
-                mha_outputs = self.attention_layers[i](
-                    seqs,
-                    seqs,
-                    timeline_mask,
-                    attention_mask,
-                    time_matrix_K,
-                    time_matrix_V,
-                    abs_pos_K,
-                    abs_pos_V,
-                )
-
-                # 残差连接后应用LayerNorm
-                seqs = self.attention_layernorms[i](seqs + mha_outputs)
-
-                # FFN部分
-                ffn_output = self.forward_layers[i](seqs)
-                seqs = self.forward_layernorms[i](seqs + ffn_output)
-
+            # FFN部分（与参考实现一致：无残差连接）
+            seqs = self.forward_layernorms[i](seqs)
+            seqs = self.forward_layers[i](seqs)
             seqs *= ~timeline_mask.unsqueeze(-1)
 
         # 最终LayerNorm归一化
@@ -484,12 +439,8 @@ class TiSASRec(torch.nn.Module):
         log_feats = self.seq2feats(user_ids, log_seqs, time_matrices)
 
         # 获取正负样本的嵌入向量
-        pos_embs = self.item_emb(
-            torch.as_tensor(pos_seqs, dtype=torch.long, device=self.dev)
-        )
-        neg_embs = self.item_emb(
-            torch.as_tensor(neg_seqs, dtype=torch.long, device=self.dev)
-        )
+        pos_embs = self.item_emb(torch.LongTensor(pos_seqs).to(self.dev))
+        neg_embs = self.item_emb(torch.LongTensor(neg_seqs).to(self.dev))
 
         # 计算正负样本与序列表示的点积得分
         pos_logits = (log_feats * pos_embs).sum(dim=-1)
@@ -519,9 +470,7 @@ class TiSASRec(torch.nn.Module):
         final_feat = log_feats[:, -1, :]
 
         # 获取候选物品的嵌入向量
-        item_embs = self.item_emb(
-            torch.as_tensor(item_indices, dtype=torch.long, device=self.dev)
-        )
+        item_embs = self.item_emb(torch.LongTensor(item_indices).to(self.dev))
 
         # 计算候选物品与用户兴趣表示的点积得分
         logits = item_embs.matmul(final_feat.unsqueeze(-1)).squeeze(-1)
@@ -550,55 +499,38 @@ class SASRec(torch.nn.Module):
     def __init__(self, user_num, item_num, args):
         super(SASRec, self).__init__()
 
-        self.user_num = user_num  # 用户总数
-        self.item_num = item_num  # 物品总数
-        self.dev = args.device  # 计算设备
-        self.norm_first = args.norm_first  # 是否先进行LayerNorm
+        self.user_num = user_num
+        self.item_num = item_num
+        self.dev = args.device
 
-        # 物品嵌入层：将物品ID映射为 hidden_units 维的向量
-        # padding_idx=0 表示物品ID为0的位置嵌入向量为全0（用于padding）
         self.item_emb = torch.nn.Embedding(
             self.item_num + 1, args.hidden_units, padding_idx=0
         )
 
-        # 位置嵌入层：记录序列中每个位置的相对位置信息
         self.pos_emb = torch.nn.Embedding(
             args.maxlen + 1, args.hidden_units, padding_idx=0
         )
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
-        # 定义多组LayerNorm和层，用于构建多个Transformer Block
-        self.attention_layernorms = torch.nn.ModuleList()  # 自注意力前的LayerNorm
-        self.attention_layers = torch.nn.ModuleList()  # 自注意力层
-        self.forward_layernorms = torch.nn.ModuleList()  # 前馈网络前的LayerNorm
-        self.forward_layers = torch.nn.ModuleList()  # 前馈网络层
+        self.attention_layernorms = torch.nn.ModuleList()
+        self.attention_layers = torch.nn.ModuleList()
+        self.forward_layernorms = torch.nn.ModuleList()
+        self.forward_layers = torch.nn.ModuleList()
 
-        # 最终的LayerNorm，对整个序列输出进行归一化
-        self.last_layernorm = torch.nn.LayerNorm(
-            args.hidden_units, eps=args.layer_norm_eps
-        )
+        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
 
-        # 构建 num_blocks 个Transformer编码器块
         for _ in range(args.num_blocks):
-            # 自注意力部分的LayerNorm
-            new_attn_layernorm = torch.nn.LayerNorm(
-                args.hidden_units, eps=args.layer_norm_eps
-            )
+            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
             self.attention_layernorms.append(new_attn_layernorm)
 
-            # 多头自注意力层
             new_attn_layer = NumericallyStableMultiheadAttention(
                 args.hidden_units, args.num_heads, args.dropout_rate
             )
             self.attention_layers.append(new_attn_layer)
 
-            # 前馈网络部分的LayerNorm
-            new_fwd_layernorm = torch.nn.LayerNorm(
-                args.hidden_units, eps=args.layer_norm_eps
-            )
+            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
             self.forward_layernorms.append(new_fwd_layernorm)
 
-            # 点式前馈网络
             new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)
             self.forward_layers.append(new_fwd_layer)
 
@@ -622,58 +554,36 @@ class SASRec(torch.nn.Module):
         seqs = self.item_emb(
             torch.as_tensor(log_seqs, dtype=torch.long, device=self.dev)
         )
-        # 缩放嵌入向量（与Transformer原论文一致）
         seqs *= self.item_emb.embedding_dim**0.5
 
-        # 创建位置索引 [1, 2, 3, ..., seq_len]
         poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
-        # 将padding位置的位置嵌入设为0
         log_seqs_np = (
             log_seqs.cpu().numpy() if hasattr(log_seqs, "cpu") else np.asarray(log_seqs)
         )
         poss = poss * (log_seqs_np != 0)
-        # 添加位置嵌入
         seqs += self.pos_emb(torch.as_tensor(poss, dtype=torch.long, device=self.dev))
         seqs = self.emb_dropout(seqs)
 
-        # 创建因果注意力掩码，防止信息泄露
-        # 只允许位置i关注位置i及之前的位置（符合序列预测的任务设定）
         tl = seqs.shape[1]
         attention_mask = ~torch.tril(
             torch.ones((tl, tl), dtype=torch.bool, device=self.dev)
         )
 
-        # 依次通过每个Transformer编码器块
         for i in range(len(self.attention_layers)):
-            # 转置以适应MultiheadAttention的输入格式 (seq_len, batch, features)
             seqs = torch.transpose(seqs, 0, 1)
 
-            if self.norm_first:
-                # Pre-LN结构：先LayerNorm，再注意力，再残差连接
-                x = self.attention_layernorms[i](seqs)
-                attn_layer = self.attention_layers[i]
-                x_attn = x.transpose(0, 1)
-                mha_outputs_T, _ = attn_layer(
-                    x_attn, x_attn, x_attn, attn_mask=attention_mask
-                )
-                mha_outputs = mha_outputs_T.transpose(0, 1)
-                seqs = seqs + mha_outputs
+            x = self.attention_layernorms[i](seqs)
+            attn_layer = self.attention_layers[i]
+            x_attn = x.transpose(0, 1)
+            mha_outputs_T, _ = attn_layer(
+                x_attn, x_attn, x_attn, attn_mask=attention_mask
+            )
+            mha_outputs = mha_outputs_T.transpose(0, 1)
+            seqs = seqs + mha_outputs
 
-                seqs = torch.transpose(seqs, 0, 1)
-                seqs = seqs + self.forward_layers[i](self.forward_layernorms[i](seqs))
-            else:
-                # Post-LN结构：先注意力，再LayerNorm，再残差连接
-                attn_layer = self.attention_layers[i]
-                seqs_attn = seqs.transpose(0, 1)
-                mha_outputs_T, _ = attn_layer(
-                    seqs_attn, seqs_attn, seqs_attn, attn_mask=attention_mask
-                )
-                mha_outputs = mha_outputs_T.transpose(0, 1)
-                seqs = self.attention_layernorms[i](seqs + mha_outputs)
-                seqs = torch.transpose(seqs, 0, 1)
-                seqs = self.forward_layernorms[i](seqs + self.forward_layers[i](seqs))
+            seqs = torch.transpose(seqs, 0, 1)
+            seqs = seqs + self.forward_layers[i](self.forward_layernorms[i](seqs))
 
-        # 最终LayerNorm归一化
         log_feats = self.last_layernorm(seqs)
 
         return log_feats
