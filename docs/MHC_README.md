@@ -1,19 +1,10 @@
-# Manifold-Constrained Hyper-Connections (mHC) Implementation
+# Manifold-Constrained Hyper-Connections (mHC) - Quick Start
 
-This directory contains an implementation of Manifold-Constrained Hyper-Connections (mHC) for the SASRec model, based on the paper "mHC: Manifold-Constrained Hyper-Connections" by DeepSeek-AI.
+> **Note**: This document provides a quick overview. For detailed documentation, see [mHC Guide](../advanced/mhc-guide.md)
 
 ## Overview
 
-mHC extends the traditional residual connection paradigm by:
-
-1. **Expanding the residual stream width** by a factor of `n` (default: 4)
-2. **Introducing three learnable mappings**:
-   - `H_pre`: Input projection (with Sigmoid activation for non-negativity)
-   - `H_post`: Output projection (with Sigmoid activation for non-negativity)  
-   - `H_res`: Residual stream mixing (projected to doubly stochastic matrices)
-
-3. **Constraining `H_res` to the Birkhoff polytope** using the Sinkhorn-Knopp algorithm
-4. **Preserving the identity mapping property** for stable training at scale
+mHC extends the traditional residual connection paradigm by projecting the residual connection space onto a constrained manifold to restore the identity mapping property.
 
 ## Key Benefits
 
@@ -23,22 +14,29 @@ mHC extends the traditional residual connection paradigm by:
 
 ## Usage
 
-### Standard SASRec (without mHC)
-```bash
-python main.py --dataset=Beauty --train_dir=baseline
-```
+### Enable mHC
 
-### SASRec with mHC
+mHC is enabled by default for TiSASRec:
+
 ```bash
-python main_mhc.py --dataset=Beauty --train_dir=mhc_test --use_mhc --mhc_expansion_rate=4
+# TiSASRec + mHC (default)
+python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
+
+# SASRec + mHC (no time features)
+python main.py --dataset=ml-1m --train_dir=sasrec_mhc --no_time
+
+# Disable mHC
+python main.py --dataset=ml-1m --train_dir=no_mhc --no_mhc
 ```
 
 ### Key Arguments
 
-- `--use_mhc`: Enable mHC (default: False)
-- `--mhc_expansion_rate`: Expansion factor `n` (default: 4)
-- `--mhc_init_gate`: Initial gating factor α (default: 0.01)
-- `--mhc_sinkhorn_iter`: Sinkhorn-Knopp iterations (default: 20)
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--mhc_expansion_rate` | 4 | Expansion factor n (2-8) |
+| `--mhc_sinkhorn_iter` | 20 | Sinkhorn-Knopp iterations (10-50) |
+| `--mhc_init_gate` | 0.01 | Initial gating factor α |
+| `--mhc_no_amp` | False | Disable mHC AMP calculation |
 
 ## Architecture
 
@@ -54,10 +52,51 @@ Where:
 - `H_l^{pre}` and `H_l^{post}` are non-negative (Sigmoid activated)
 - `F` is the residual function (attention + FFN)
 
+## Troubleshooting
+
+### NaN During Training
+
+1. Enable mHC no-AMP:
+   ```bash
+   python main.py --mhc_no_amp
+   ```
+
+2. Reduce expansion rate:
+   ```bash
+   python main.py --mhc_expansion_rate=2
+   ```
+
+3. Increase Sinkhorn iterations:
+   ```bash
+   python main.py --mhc_sinkhorn_iter=50
+   ```
+
+### Memory Issues
+
+```bash
+# Use smaller batch size
+--batch_size=64
+
+# Use AMP
+--use_amp
+
+# Reduce sequence length
+--maxlen=100
+```
+
+## More Information
+
+For detailed documentation, see:
+- [mHC Guide](../advanced/mhc-guide.md) - Complete mHC documentation
+- [Architecture](../architecture.md) - System architecture overview
+- [Distributed Training](../advanced/distributed-training.md) - Multi-GPU training
+
 ## Reference
 
+```bibtex
 @misc{deepseek2025mhcsurvey,
       title={mHC: Manifold-Constrained Hyper-Connections},
       author={DeepSeek-AI},
       year={2025}
 }
+```

@@ -1,3 +1,66 @@
+# OS files
 .DS_Store
+Thumbs.db
+
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Training outputs
 *_default/
+train_dir*/
+ml-1m_*/
+*.pth
+*.pth.tar
+*.ckpt
+
+# Experiments
+python/experiments/*
+python/ml-1m_exp_*/
+python/ml-1m_tune_*/
+python/ml-1m_tisasrec_batch/
+
+# Logs
+*.log
+*.out
+step_log.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+sync_and_test.sh
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Model files
+models/
+outputs/

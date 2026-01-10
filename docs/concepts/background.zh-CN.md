@@ -1,4 +1,4 @@
-# SASRec 背景知识文档
+# 序列推荐背景知识
 
 ## 什么是序列推荐？
 
@@ -23,11 +23,11 @@
 
 **SASRec = Self-Attentive Sequential Recommendation**
 
-这是 2018 年由 Kang 和 McAuley 提出的模型，将 Transformer 架构引入序列推荐任务。
+这是2018年由Kang和McAuley提出的模型，将Transformer架构引入序列推荐任务。
 
 ### 核心创新
 
-1. **自注意力机制**：替代传统的 RNN/LSTM，能够更好地捕捉序列中的长期依赖
+1. **自注意力机制**：替代传统的RNN/LSTM，能够更好地捕捉序列中的长期依赖
 2. **位置嵌入**：为序列中的每个位置添加位置信息
 3. **多层堆叠**：通过堆叠多个注意力块，学习不同层次的序列模式
 
@@ -46,7 +46,7 @@
 
 ### 2. 自注意力机制（Self-Attention）
 
-这是 Transformer 的核心组件。简单理解：
+这是Transformer的核心组件。简单理解：
 
 ```
 对于序列中的每个位置，计算它与所有其他位置的关联强度
@@ -77,7 +77,7 @@
 
 ### 对比学习
 
-SASRec 使用对比学习策略进行训练：
+SASRec使用对比学习策略进行训练：
 
 **正样本**：用户实际交互的下一个物品
 **负样本**：用户从未交互过的随机物品
@@ -100,15 +100,80 @@ Loss = -log(sigmoid(正样本得分)) - log(1 - sigmoid(负样本得分))
 
 衡量推荐列表排序质量的指标。
 
-- 真实物品排名越靠前，NDCG 越高
-- 范围：0 到 1，越高越好
+- 真实物品排名越靠前，NDCG越高
+- 范围：0到1，越高越好
 
 ### HR（Hit Rate）
 
 命中率，衡量推荐列表是否包含目标物品。
 
 - 如果真实物品在推荐列表的前10名中，HR@10 = 1
-- 范围：0 到 1，越高越好
+- 范围：0到1，越高越好
+
+## TiSASRec 模型
+
+**TiSASRec = Time Interval Aware Self-Attention**
+
+在SASRec基础上引入时间间隔信息，让模型能够学习到：
+- 越近的行为越相关
+- 用户兴趣随时间的变化趋势
+- 不同时间间隔对推荐的影响
+
+### 注意力计算
+
+```
+标准注意力：
+    A_ij = softmax(Q_i · K_j^T)
+
+TiSASRec注意力：
+    A_ij = softmax(Q_i · K_j^T 
+                   + Q_i · abs_pos_K_i^T 
+                   + time_matrix_K_j · Q_i)
+```
+
+## mHC（流形约束超连接）
+
+### 为什么需要mHC？
+
+传统残差连接：
+```
+x_{l+1} = x_l + F(x_l)
+```
+
+mHC残差连接：
+```
+x_{l+1} = H_res × x_l + H_post^T × F(H_pre × x_l)
+```
+
+### 核心思想
+
+1. **扩展残差流宽度**：将维度从C扩展到n×C
+2. **引入三个可学习映射**：H_pre, H_post, H_res
+3. **流形约束**：使用Sinkhorn-Knopp算法将H_res投影到双随机矩阵流形
+4. **保持身份映射属性**：确保信号传播的稳定性
+
+### Sinkhorn-Knopp算法
+
+```python
+def sinkhorn_knopp(M, max_iter=20):
+    """将矩阵投影到双随机矩阵流形"""
+    n = M.shape[-1]
+    M = torch.exp(M)
+    for _ in range(max_iter):
+        row_sum = M.sum(dim=-1, keepdim=True)
+        M = M / (row_sum + 1e-12)  # 行归一化
+        
+        col_sum = M.sum(dim=-2, keepdim=True)
+        M = M / (col_sum + 1e-12)  # 列归一化
+    
+    return M  # 双随机矩阵
+```
+
+### mHC优势
+
+- **训练稳定性**：双随机约束确保信号范数保持
+- **可扩展性**：深层网络梯度稳定
+- **性能提升**：通过多流信息交换改善表示学习
 
 ## 代码结构说明
 
@@ -126,6 +191,14 @@ Loss = -log(sigmoid(正样本得分)) - log(1 - sigmoid(负样本得分))
 模型定义，包含：
 - `PointWiseFeedForward`：前馈神经网络
 - `SASRec`：完整的序列推荐模型
+- `TiSASRec`：时序感知序列推荐模型
+
+### model_mhc.py
+
+mHC变体模型定义，包含：
+- `mHCResidual`：流形约束超连接残差模块
+- `SASRec_mHC`：带mHC的SASRec
+- `TiSASRec_mHC`：带mHC的TiSASRec
 
 ### utils.py
 
@@ -133,7 +206,8 @@ Loss = -log(sigmoid(正样本得分)) - log(1 - sigmoid(负样本得分))
 - `build_index`：构建用户-物品索引
 - `WarpSampler`：多进程采样器
 - `data_partition`：数据划分
-- `evaluate` / `evaluate_valid`：模型评估
+- `evaluate`/`evaluate_valid`：模型评估
+- `WarpSamplerWithTime`：时序感知采样器
 
 ## 关键超参数
 
@@ -143,20 +217,46 @@ Loss = -log(sigmoid(正样本得分)) - log(1 - sigmoid(负样本得分))
 | `--lr` | 0.001 | 学习率，太大不稳定，太小收敛慢 |
 | `--maxlen` | 200 | 序列最大长度 |
 | `--hidden_units` | 50 | 嵌入维度 |
-| `--num_blocks` | 2 | Transformer Block 数量 |
-| `--num_heads` | 1 | 注意力头数量 |
-| `--dropout_rate` | 0.2 | Dropout 比率 |
+| `--num_blocks` | 2 | Transformer Block数量 |
+| `--num_heads` | 2 | 注意力头数量 |
+| `--dropout_rate` | 0.2 | Dropout比率 |
+| `--num_epochs` | 300 | 训练轮数 |
+| `--mhc_expansion_rate` | 4 | mHC扩展因子 |
+| `--mhc_sinkhorn_iter` | 20 | Sinkhorn迭代次数 |
 
 ## 运行命令示例
 
 ### 训练模型
+
 ```bash
-python main.py --dataset=ml-1m --train_dir=default --maxlen=200 --dropout_rate=0.2 --device=cuda
+cd python
+
+# SASRec基准
+python main.py --dataset=ml-1m --train_dir=sasrec_base --no_time --no_mhc
+
+# SASRec + mHC
+python main.py --dataset=ml-1m --train_dir=sasrec_mhc --no_time
+
+# TiSASRec
+python main.py --dataset=ml-1m --train_dir=tisasrec
+
+# TiSASRec + mHC
+python main.py --dataset=ml-1m --train_dir=tisasrec_mhc
 ```
 
-### 仅推理（使用预训练模型）
+### 仅推理
+
 ```bash
-python main.py --device=cuda --dataset=ml-1m --train_dir=default --state_dict_path=xxx.pth --inference_only=true --maxlen=200
+python main.py --device=cuda --dataset=ml-1m --train_dir=default \
+    --state_dict_path=xxx.pth --inference_only=true --maxlen=200
+```
+
+### 多卡训练
+
+```bash
+python -m torch.distributed.launch --nproc_per_node=4 main.py \
+    --dataset=ml-1m --train_dir=tisasrec_dist --batch_size=512 \
+    --use_amp --multi_gpu
 ```
 
 ## 负采样详解
@@ -171,7 +271,7 @@ python main.py --device=cuda --dataset=ml-1m --train_dir=default --state_dict_pa
 **负采样策略：**
 1. 从用户未交互的物品中随机选择
 2. 确保负样本不被用户交互过
-3. 一般每个正样本配多个负样本（代码中使用1:1）
+3. 一般每个正样本配多个负样本
 
 ## 因果注意力掩码
 
@@ -183,21 +283,21 @@ python main.py --device=cuda --dataset=ml-1m --train_dir=default --state_dict_pa
 
 ```
 位置:   1   2   3   4
-可以看: ✓   ✗   ✗   ✗
-可以看: ✓   ✓   ✗   ✗
-可以看: ✓   ✓   ✓   ✗
-可以看: ✓   ✓   ✓   ✓
+位置1:  ✓   ✗   ✗   ✗
+位置2:  ✓   ✓   ✗   ✗
+位置3:  ✓   ✓   ✓   ✗
+位置4:  ✓   ✓   ✓   ✓
 ```
 
 ## 数据格式
 
 训练数据文件格式（data/xxx.txt）：
 ```
-用户ID 物品ID
-1 5
-1 7
-1 3
-2 10
+用户ID 物品ID 时间戳(可选)
+1 5 1234567890
+1 7 1234567900
+1 3 1234567910
+2 10 1234567920
 ...
 ```
 
@@ -222,44 +322,16 @@ python main.py --device=cuda --dataset=ml-1m --train_dir=default --state_dict_pa
 输出
 ```
 
-**示例**：
-```python
-# 简化示例
-inputs = [0.5, 0.3, 0.8]     # 输入值
-weights = [0.2, 0.4, 0.1]    # 权重
-output = sigmoid(0.5*0.2 + 0.3*0.4 + 0.8*0.1)  # 加权求和 + 激活
-```
-
----
-
 ### 2. Dropout（随机丢弃）
 
 **作用**：防止模型过拟合（过度记忆训练数据）
 
 **操作**：训练时随机将某些神经元的输出设为0
 
-**代码示例**：
-```python
-self.dropout = torch.nn.Dropout(p=0.2)  # 20%的神经元被丢弃
-```
-
-**直观示例**：
-```
-原始向量: [0.5, 0.8, 0.3, 0.9, 0.2]
-          ↓ (随机丢弃20%)
-丢弃后:   [0.5, 0.0, 0.3, 0.9, 0.0]
-          ↓ (缩放保持期望和不变)
-输出:     [0.625, 0, 0.375, 1.125, 0]
-```
-
-**类比**：像学生考试时随机蒙住部分眼睛看题目，强迫他从多个角度理解，而不是只记住特定解题方法。
-
 **目的**：
 - 防止模型过度依赖特定神经元
 - 增强模型泛化能力
 - 减少过拟合风险
-
----
 
 ### 3. LayerNorm（层归一化）
 
@@ -270,23 +342,10 @@ self.dropout = torch.nn.Dropout(p=0.2)  # 20%的神经元被丢弃
 output = (x - mean(x)) / std(x) × γ + β
 ```
 
-**示例**：
-```
-输入: [0.2, 0.5, 0.8, 0.1]
-均值: 0.4
-标准差: 0.29
-       ↓
-归一化: [-0.69, 0.34, 1.38, -1.03]
-       ↓
-缩放平移: 输出（γ和β是可学习参数）
-```
-
 **目的**：
 - 稳定训练过程
 - 加快收敛速度
 - 减少对初始化的敏感度
-
----
 
 ### 4. 残差连接（Residual Connection）
 
@@ -299,20 +358,10 @@ output = (x - mean(x)) / std(x) × γ + β
    →——相加——→
 ```
 
-**代码**：
-```python
-output = self.attention_layers[i](x)
-output = self.attention_layernorms[i](x + output)  # 残差连接
-```
-
 **目的**：
 - 缓解梯度消失问题
 - 让模型更容易学习"恒等映射"
 - 允许更深的网络
-
-**直观理解**：如果某一层什么也不学（输出=输入），网络仍能正常工作，信息可以直接传递。
-
----
 
 ### 5. Transformer Block
 
@@ -337,63 +386,7 @@ Feed Forward (前馈网络)
 输出
 ```
 
----
-
-### 6. 为什么要堆叠多个Block？
-
-**原因**：每层学习不同层次的信息
-
-```
-输入序列: [A, B, C, D]
-
-Block 1 (学习局部模式):
-  - A和B的关系
-  - B和C的关系
-  - C和D的关系
-
-Block 2 (学习复杂模式):
-  - A和D的关系（长距离依赖）
-  - A和C的关系
-  - B和D的关系
-
-Block 3+ (学习深层抽象):
-  - 更复杂的组合模式
-```
-
-**类比**：像读书一样
-- 第1遍：理解字词
-- 第2遍：理解句子
-- 第3遍：理解段落
-- 第4遍：理解全文
-
----
-
-### 7. 前馈网络（Feed Forward Network）
-
-**结构**：
-```
-输入 → 线性变换 → ReLU → Dropout → 线性变换 → Dropout → 输出
-```
-
-**代码**：
-```python
-self.conv1 = torch.nn.Conv1d(hidden_units, hidden_units, kernel_size=1)
-self.relu = torch.nn.ReLU()
-self.conv2 = torch.nn.Conv1d(hidden_units, hidden_units, kernel_size=1)
-```
-
-**作用**：
-- 增加非线性表达能力
-- 对每个位置独立进行变换
-- 增强模型的拟合能力
-
-**直观理解**：
-- 自注意力是"信息交流"：让不同位置互相交换信息
-- 前馈网络是"独立思考"：让每个位置独立处理信息
-
----
-
-### 8. 自注意力机制（Self-Attention）
+### 6. 自注意力机制（Self-Attention）
 
 **核心思想**：序列中每个位置都可以"关注"所有其他位置
 
@@ -401,7 +394,7 @@ self.conv2 = torch.nn.Conv1d(hidden_units, hidden_units, kernel_size=1)
 
 **步骤1：生成Q/K/V向量**
 ```
-输入: [h1, h2, h3]  (每个是50维向量)
+输入: [h1, h2, h3] (每个是50维向量)
        ↓
    Q/K/V矩阵变换
        ↓
@@ -412,12 +405,7 @@ self.conv2 = torch.nn.Conv1d(hidden_units, hidden_units, kernel_size=1)
 
 **步骤2：计算注意力分数**
 ```
-score_ij = q_i · k_j / √d  (d是向量维度，如50)
-
-例如计算位置1对其他位置的关注：
-- q1·k1/√50  → 位置1对自身的关注
-- q1·k2/√50  → 位置1对位置2的关注
-- q1·k3/√50  → 位置1对位置3的关注
+score_ij = q_i · k_j / √d (d是向量维度，如50)
 ```
 
 **步骤3：Softmax归一化**
@@ -430,42 +418,20 @@ attention_ij = exp(score_ij) / Σexp(score_i)
 new_h1 = attention_11×v1 + attention_12×v2 + attention_13×v3
 ```
 
-**直观示例**（分析句子"猫坐在垫子上"）：
-```
-位置1 "猫": 可能更关注"坐"、"垫子"（语义相关）
-位置2 "坐": 可能更关注"猫"、"上"（主语和介词）
-位置3 "在": 可能关注所有词（语法功能，连接作用）
-位置4 "垫子": 可能关注"猫"、"坐"（语义相关）
-```
-
----
-
-### 9. 损失函数（Loss）
+### 7. 损失函数（Loss）
 
 **作用**：衡量模型预测与真实目标的差距
 
-**代码示例**：
-```python
-bce_criterion = torch.nn.BCEWithLogitsLoss()
-loss = bce_criterion(pos_logits, pos_labels)      # 正样本损失
-loss += bce_criterion(neg_logits, neg_labels)     # 负样本损失
-```
-
-**BCE Loss 公式**：
+**BCE Loss公式**：
 ```
 Loss = -log(sigmoid(正样本得分)) - log(1 - sigmoid(负样本得分))
-     = -log(正样本概率) - log(1 - 负样本概率)
 ```
 
 **直观理解**：
-- 正样本（用户实际交互的物品）：希望得分越高越好 → 概率接近1 → log(1)=0 → 损失小
-- 负样本（用户未交互的物品）：希望得分越低越好 → 概率接近0 → log(1)=0 → 损失小
+- 正样本（用户实际交互的物品）：希望得分越高越好
+- 负样本（用户未交互的物品）：希望得分越低越好
 
-**训练目标**：通过反向传播不断减小Loss，让模型学会区分"用户会喜欢"和"用户不喜欢"的物品。
-
----
-
-### 10. 为什么要这样设计？
+## 为什么要这样设计？
 
 | 设计 | 解决的问题 | 效果 |
 |------|-----------|------|
@@ -477,16 +443,14 @@ Loss = -log(sigmoid(正样本得分)) - log(1 - sigmoid(负样本得分))
 | Dropout | 过拟合 | 提高泛化能力 |
 | 前馈网络 | 注意力层表达有限 | 增强非线性能力 |
 | 多层堆叠 | 浅层模型能力有限 | 学习多层次特征 |
+| mHC | 深层训练不稳定 | 保持身份映射属性 |
 
 **整体思路**：
 1. 用位置嵌入保留序列顺序
 2. 用自注意力建模依赖关系
 3. 用多层堆叠学习多层次模式
 4. 用各种技术（Norm、残差、Dropout）保证训练稳定
-
-这就是Transformer架构成功的原因！
-
----
+5. 用mHC增强深层网络的稳定性
 
 ## 常见问题
 
@@ -510,11 +474,21 @@ A: 通常通过实验调参：
 - 根据验证集表现调整
 - 注意过拟合问题
 
+### Q: mHC有什么作用？
+
+A: mHC通过流形约束：
+- 提高训练稳定性
+- 支持更深的网络
+- 改善模型性能
+- 代价是增加约10-15%的计算和内存开销
+
 ## 延伸学习
 
-1. **Transformer 原论文**：Attention Is All You Need
-2. **SASRec 原始论文**：Self-attentive sequential recommendation
-3. **其他序列推荐模型**：GRU4Rec、BERT4Rec、TiSASRec
+1. **Transformer原论文**：Attention Is All You Need
+2. **SASRec原始论文**：Self-attentive sequential recommendation
+3. **TiSASRec原始论文**：Time Interval Aware Self-Attention
+4. **mHC原始论文**：Manifold-Constrained Hyper-Connections (DeepSeek-AI, 2025)
+5. **其他序列推荐模型**：GRU4Rec、BERT4Rec
 
 ## 参考文献
 
@@ -526,5 +500,17 @@ A: 通常通过实验调参：
   pages={197--206},
   year={2018},
   organization={IEEE}
+}
+
+@article{li2020time,
+  title={Time Interval Aware Self-Attention for Sequential Recommendation},
+  author={Li, Zeynep and McAuley, Julian},
+  year={2020}
+}
+
+@misc{deepseek2025mhc,
+  title={mHC: Manifold-Constrained Hyper-Connections},
+  author={DeepSeek-AI},
+  year={2025}
 }
 ```
