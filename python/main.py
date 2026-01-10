@@ -133,7 +133,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--early_stop_threshold",
-    default=0.001,
+    default=0.005,
     type=float,
     help="Loss改善阈值，小于此值认为无改善",
 )
